@@ -303,7 +303,7 @@ class Writer(object):
 					return
 
 				with open(
-					f"term_bank_{termBankIndex}.json",
+					f"migaku_dict_{termBankIndex}.json",
 					mode="w",
 					encoding="utf-8",
 				) as _file:
