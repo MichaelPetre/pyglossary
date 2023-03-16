@@ -1,18 +1,143 @@
 import sys
-from os.path import dirname, abspath, relpath
+import typing
 import unittest
+from os.path import abspath, dirname, relpath
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from tests.glossary_test import TestGlossaryBase
-from tests.glossary_errors_test import TestGlossaryErrorsBase
 from pyglossary.glossary import Glossary
+from tests.glossary_errors_test import TestGlossaryErrorsBase
 
 
-class TestGlossaryStarDict(TestGlossaryBase):
-	def __init__(self, *args, **kwargs):
-		TestGlossaryBase.__init__(self, *args, **kwargs)
+class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
+	def convert_txt_stardict(
+		self: "typing.Self",
+		fname,
+		fname2="",
+		syn=True,
+		dictzip=False,
+		config=None,
+		rawEntryCompress=None,
+		writeOptions=None,
+		info=None,
+		**convertArgs,
+	):
+		if not fname2:
+			fname2 = fname
+
+		binExtList = ["idx", "dict"]
+		if syn:
+			binExtList.append("syn")
+
+		inputFilename = self.downloadFile(f"{fname}.txt")
+		outputFilename = self.newTempFilePath(f"{fname}.ifo")
+		otherFiles = {
+			ext: self.newTempFilePath(f"{fname}.{ext}")
+			for ext in binExtList
+		}
+
+		glos = self.glos = Glossary(info=info)
+
+		if config is not None:
+			glos.config = config
+
+		if rawEntryCompress is not None:
+			glos.setRawEntryCompress(rawEntryCompress)
+
+		if writeOptions is None:
+			writeOptions = {}
+		writeOptions["dictzip"] = dictzip
+
+		result = glos.convert(
+			inputFilename=inputFilename,
+			outputFilename=outputFilename,
+			writeOptions=writeOptions,
+			**convertArgs,
+		)
+		self.assertEqual(outputFilename, result)
+
+		self.compareTextFiles(
+			outputFilename,
+			self.downloadFile(f"{fname2}.sd/{fname2}.ifo"),
+		)
+
+		for ext in binExtList:
+			self.compareBinaryFiles(
+				otherFiles[ext],
+				self.downloadFile(f"{fname2}.sd/{fname2}.{ext}"),
+			)
+
+	def convert_txt_stardict_zip(
+		self: "typing.Self",
+		fname,
+		sha1sumDict,
+		dictzip=False,
+		config=None,
+		rawEntryCompress=None,
+		**convertArgs,
+	):
+		inputFilename = self.downloadFile(f"{fname}.txt")
+		outputFilename = self.newTempFilePath(f"{fname}.zip")
+
+		glos = self.glos = Glossary()
+
+		if config is not None:
+			glos.config = config
+
+		if rawEntryCompress is not None:
+			glos.setRawEntryCompress(rawEntryCompress)
+
+		result = glos.convert(
+			inputFilename=inputFilename,
+			outputFilename=outputFilename,
+			outputFormat="Stardict",
+			writeOptions={
+				"dictzip": dictzip,
+			},
+			**convertArgs,
+		)
+		self.assertEqual(outputFilename, result)
+
+		self.checkZipFileSha1sum(
+			outputFilename,
+			sha1sumDict=sha1sumDict,
+		)
+
+	def convert_stardict_txt(
+		self: "typing.Self",
+		inputFname: str,
+		outputFname: str,
+		testId: str,
+		syn=True,
+		**convertArgs,
+	):
+		binExtList = ["idx", "dict"]
+		if syn:
+			binExtList.append("syn")
+		for ext in binExtList:
+			self.downloadFile(f"{inputFname}.sd/{inputFname}.{ext}")
+
+		inputFilename = self.downloadFile(f"{inputFname}.sd/{inputFname}.ifo")
+		outputFilename = self.newTempFilePath(
+			f"{inputFname}-{testId}.txt",
+		)
+		expectedFilename = self.downloadFile(f"{outputFname}.txt")
+		glos = self.glos = Glossary()
+
+		result = glos.convert(
+			inputFilename=inputFilename,
+			outputFilename=outputFilename,
+			**convertArgs,
+		)
+		self.assertEqual(outputFilename, result)
+
+		self.compareTextFiles(outputFilename, expectedFilename)
+
+
+class TestGlossaryStarDict(TestGlossaryStarDictBase):
+	def __init__(self: "typing.Self", *args, **kwargs):
+		TestGlossaryErrorsBase.__init__(self, *args, **kwargs)
 
 		self.dataFileCRC32.update({
 			"004-bar.sd/004-bar.dict": "9ea397f8",
@@ -29,6 +154,8 @@ class TestGlossaryStarDict(TestGlossaryBase):
 			"100-en-fa.sd/100-en-fa.ifo": "3f2086cd",
 			"100-en-fa.sd/100-en-fa.syn": "1160fa0b",
 			"100-en-fa-sd.txt": "85f9d3fc",
+			# FIXME: remove empty description line from 100-en-fa.ifo
+			# stardict-mixed-types-1.ifo, "stardict-mixed-types-2.ifo
 
 			"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.dict": "223a0d1d",
 			"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.idx": "13f1c7af",
@@ -69,136 +196,14 @@ class TestGlossaryStarDict(TestGlossaryBase):
 			"004-plain-html-alts-merge-syns.ifo": "628abe99",
 		})
 
-	def convert_txt_stardict(
-		self,
-		fname,
-		fname2="",
-		syn=True,
-		dictzip=False,
-		config=None,
-		rawEntryCompress=None,
-		writeOptions=None,
-		**convertArgs
-	):
-		if not fname2:
-			fname2 = fname
-
-		binExtList = ["idx", "dict"]
-		if syn:
-			binExtList.append("syn")
-
-		inputFilename = self.downloadFile(f"{fname}.txt")
-		outputFilename = self.newTempFilePath(f"{fname}.ifo")
-		otherFiles = {
-			ext: self.newTempFilePath(f"{fname}.{ext}")
-			for ext in binExtList
-		}
-
-		glos = self.glos = Glossary()
-
-		if config is not None:
-			glos.config = config
-
-		if rawEntryCompress is not None:
-			glos.setRawEntryCompress(rawEntryCompress)
-
-		if writeOptions is None:
-			writeOptions = {}
-		writeOptions["dictzip"] = dictzip
-
-		result = glos.convert(
-			inputFilename=inputFilename,
-			outputFilename=outputFilename,
-			writeOptions=writeOptions,
-			**convertArgs
-		)
-		self.assertEqual(outputFilename, result)
-
-		self.compareTextFiles(
-			outputFilename,
-			self.downloadFile(f"{fname2}.sd/{fname2}.ifo"),
-		)
-
-		for ext in binExtList:
-			self.compareBinaryFiles(
-				otherFiles[ext],
-				self.downloadFile(f"{fname2}.sd/{fname2}.{ext}")
-			)
-
-	def convert_txt_stardict_zip(
-		self,
-		fname,
-		sha1sumDict,
-		dictzip=False,
-		config=None,
-		rawEntryCompress=None,
-		**convertArgs
-	):
-		inputFilename = self.downloadFile(f"{fname}.txt")
-		outputFilename = self.newTempFilePath(f"{fname}.zip")
-
-		glos = self.glos = Glossary()
-
-		if config is not None:
-			glos.config = config
-
-		if rawEntryCompress is not None:
-			glos.setRawEntryCompress(rawEntryCompress)
-
-		result = glos.convert(
-			inputFilename=inputFilename,
-			outputFilename=outputFilename,
-			outputFormat="Stardict",
-			writeOptions={
-				"dictzip": dictzip,
-			},
-			**convertArgs
-		)
-		self.assertEqual(outputFilename, result)
-
-		self.checkZipFileSha1sum(
-			outputFilename,
-			sha1sumDict=sha1sumDict,
-		)
-
-	def convert_stardict_txt(
-		self,
-		inputFname: str,
-		outputFname: str,
-		testId: str,
-		syn=True,
-		**convertArgs
-	):
-		binExtList = ["idx", "dict"]
-		if syn:
-			binExtList.append("syn")
-		for ext in binExtList:
-			self.downloadFile(f"{inputFname}.sd/{inputFname}.{ext}")
-
-		inputFilename = self.downloadFile(f"{inputFname}.sd/{inputFname}.ifo")
-		outputFilename = self.newTempFilePath(
-			f"{inputFname}-{testId}.txt"
-		)
-		expectedFilename = self.downloadFile(f"{outputFname}.txt")
-		glos = self.glos = Glossary()
-
-		result = glos.convert(
-			inputFilename=inputFilename,
-			outputFilename=outputFilename,
-			**convertArgs
-		)
-		self.assertEqual(outputFilename, result)
-
-		self.compareTextFiles(outputFilename, expectedFilename)
-
-	def test_convert_txt_stardict_0(self):
+	def test_convert_txt_stardict_0(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			config={"auto_sqlite": True},
 			direct=True,
 		)
 
-	def test_convert_txt_stardict_1(self):
+	def test_convert_txt_stardict_1(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			for rawEntryCompress in (None, True, False):
 				self.convert_txt_stardict(
@@ -207,7 +212,8 @@ class TestGlossaryStarDict(TestGlossaryBase):
 					sqlite=sqlite,
 				)
 
-	def test_convert_txt_stardict_1_merge_syns(self):
+
+	def test_convert_txt_stardict_1_merge_syns(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			fname2="100-en-fa-merge-syns",
@@ -215,7 +221,7 @@ class TestGlossaryStarDict(TestGlossaryBase):
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_1_zip(self):
+	def test_convert_txt_stardict_1_zip(self: "typing.Self"):
 		sha1sumDict = {
 			"100-en-fa.dict": "1e462e829f9e2bf854ceac2ef8bc55911460c79e",
 			"100-en-fa.idx": "943005945b35abf3a3e7b80375c76daa87e810f0",
@@ -229,7 +235,7 @@ class TestGlossaryStarDict(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_2(self):
+	def test_convert_txt_stardict_2(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			for rawEntryCompress in (None, True, False):
 				self.convert_txt_stardict(
@@ -238,7 +244,7 @@ class TestGlossaryStarDict(TestGlossaryBase):
 					sqlite=sqlite,
 				)
 
-	def test_convert_txt_stardict_3(self):
+	def test_convert_txt_stardict_3(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
 				"100-en-de",
@@ -246,14 +252,14 @@ class TestGlossaryStarDict(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_3_merge_syns(self):
+	def test_convert_txt_stardict_3_merge_syns(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"100-en-de",
 			syn=False,
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_4(self):
+	def test_convert_txt_stardict_4(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
 				"100-ja-en",
@@ -261,7 +267,7 @@ class TestGlossaryStarDict(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_5(self):
+	def test_convert_txt_stardict_5(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
 				"300-ru-en",
@@ -269,21 +275,24 @@ class TestGlossaryStarDict(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_sqlite_no_alts(self):
+	def test_convert_txt_stardict_sqlite_no_alts(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			config={"enable_alts": False},
 			sqlite=True,
 		)
+		self.assertLogWarning(
+			"SQLite mode only works with enable_alts=True, force-enabling it.",
+		)
 
-	def test_convert_stardict_txt_1(self):
+	def test_convert_stardict_txt_1(self: "typing.Self"):
 		self.convert_stardict_txt(
 			"100-en-fa",
 			"100-en-fa-sd",
 			"1",
 		)
 
-	def test_convert_stardict_txt_mixed_types_1(self):
+	def test_convert_stardict_txt_mixed_types_1(self: "typing.Self"):
 		self.convert_stardict_txt(
 			"stardict-mixed-types-2",
 			"stardict-mixed-types-2.sd",
@@ -291,7 +300,7 @@ class TestGlossaryStarDict(TestGlossaryBase):
 			syn=False,
 		)
 
-	def test_convert_stardict_txt_mixed_types_2(self):
+	def test_convert_stardict_txt_mixed_types_2(self: "typing.Self"):
 		self.convert_stardict_txt(
 			"stardict-mixed-types-2",
 			"stardict-mixed-types-2.sd",
@@ -300,26 +309,26 @@ class TestGlossaryStarDict(TestGlossaryBase):
 			readOptions={"xdxf_to_html": False},
 		)
 
-	def test_convert_txt_stardict_general_1(self):
+	def test_convert_txt_stardict_general_1(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"002-plain-html",
 			syn=False,
 		)
 
-	def test_convert_txt_stardict_general_1_merge_syns(self):
+	def test_convert_txt_stardict_general_1_merge_syns(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"002-plain-html",
 			syn=False,
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_general_2(self):
+	def test_convert_txt_stardict_general_2(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"004-plain-html-alts",
 			syn=True,
 		)
 
-	def test_convert_txt_stardict_general_2_merge_syns(self):
+	def test_convert_txt_stardict_general_2_merge_syns(self: "typing.Self"):
 		self.convert_txt_stardict(
 			"004-plain-html-alts",
 			fname2="004-plain-html-alts-merge-syns",
@@ -329,10 +338,10 @@ class TestGlossaryStarDict(TestGlossaryBase):
 
 
 class TestGlossaryErrorsStarDict(TestGlossaryErrorsBase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		TestGlossaryErrorsBase.__init__(self, *args, **kwargs)
 
-	def test_convert_from_stardict_invalid_sametypesequence(self):
+	def test_convert_from_stardict_invalid_sametypesequence(self: "typing.Self"):
 		fname = "foobar"
 		inputFilename = self.newTempFilePath(f"{fname}.ifo")
 		outputFilename = self.newTempFilePath(f"{fname}.txt")

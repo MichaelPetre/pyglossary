@@ -1,17 +1,18 @@
 import sys
-from os.path import dirname, abspath
+import typing
 import unittest
-import mistune  # to ensure it's installed
+from os.path import abspath, dirname
+
+import mistune  # noqa: F401, to ensure it's installed
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from tests.glossary_test import TestGlossaryBase
-from pyglossary.entry import Entry
+from tests.glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryDictfile(TestGlossaryBase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 
 		self.dataFileCRC32.update({
@@ -25,7 +26,7 @@ class TestGlossaryDictfile(TestGlossaryBase):
 			"res/6684158d.gif": "6684158d",
 		})
 
-	def convert_df_txt(self, fname, fname2, resFiles, **convertArgs):
+	def convert_df_txt(self: "typing.Self", fname, fname2, resFiles, **convertArgs):
 		resFilesPath = {
 			resFileName: self.newTempFilePath(f"{fname}-2.txt_res/{resFileName}")
 			for resFileName in resFiles
@@ -35,7 +36,7 @@ class TestGlossaryDictfile(TestGlossaryBase):
 			f"{fname}.df",
 			f"{fname}-2.txt",
 			compareText=f"{fname2}.txt",
-			**convertArgs
+			**convertArgs,
 		)
 
 		for resFileName in resFiles:
@@ -43,15 +44,15 @@ class TestGlossaryDictfile(TestGlossaryBase):
 			fpath2 = resFilesPath[resFileName]
 			self.compareBinaryFiles(fpath1, fpath2)
 
-	def convert_txt_df(self, fname, fname2, **convertArgs):
+	def convert_txt_df(self: "typing.Self", fname, fname2, **convertArgs):
 		self.convert(
 			f"{fname}.txt",
 			f"{fname}-2.df",
 			compareText=f"{fname2}.df",
-			**convertArgs
+			**convertArgs,
 		)
 
-	def test_convert_df_txt_1(self):
+	def test_convert_df_txt_1(self: "typing.Self"):
 		self.convert_df_txt(
 			"022-en-en",
 			"022-en-en.df",
@@ -63,9 +64,12 @@ class TestGlossaryDictfile(TestGlossaryBase):
 			],
 		)
 
-	def test_convert_txt_df_1(self):
+	def test_convert_txt_df_1(self: "typing.Self"):
 		self.convert_txt_df(
 			"022-en-en.df",
 			"022-en-en.df.txt",
 		)
 
+
+if __name__ == "__main__":
+	unittest.main()

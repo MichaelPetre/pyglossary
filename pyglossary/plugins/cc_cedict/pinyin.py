@@ -1,6 +1,7 @@
 # coding=utf-8
 # based on https://github.com/zkoch/CEDICT_Parser
 
+
 TONES = {
 	"a1": "ā", "a2": "á", "a3": "ǎ", "a4": "à",
 	"e1": "ē", "e2": "é", "e3": "ě", "e4": "è",
@@ -14,14 +15,14 @@ TONES = {
 VOWELS = ("a", "e", "o", "iu", "ui", "i", "u", "v")
 
 
-def convert(word):
+def convert(word: str) -> "tuple[str, str]":
 	tone = word[-1]
 	pinyin = word[0:-1].lower()
 	result = pinyin
 
 	if tone == "5":
 		return pinyin, tone
-	elif tone not in ("1", "2", "3", "4"):
+	if tone not in ("1", "2", "3", "4"):
 		return word, ""
 
 	for vowel in VOWELS:

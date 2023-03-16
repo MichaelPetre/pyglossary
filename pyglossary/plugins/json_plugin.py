@@ -1,6 +1,22 @@
-# -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import typing
+
+# -*- coding: utf-8 -*-
+from typing import Generator
+
+from pyglossary.compression import (
+	# compressionOpen,
+	stdCompressions,
+)
+from pyglossary.glossary_types import (
+	EntryType,
+	GlossaryType,
+)
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
 
 enable = True
 lname = "json"
@@ -15,7 +31,7 @@ website = (
 	"https://www.json.org/json-en.html",
 	"www.json.org",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"enable_info": BoolOption(comment="Enable glossary info / metedata"),
 	"resources": BoolOption(comment="Enable resources / data files"),
@@ -33,19 +49,20 @@ class Writer(object):
 
 	compressions = stdCompressions
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 		glos.preventDuplicateWords()
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		self._filename = None
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		from json import dumps
+
 		from pyglossary.text_writer import writeTxt
 
 		glos = self._glos
@@ -55,7 +72,7 @@ class Writer(object):
 
 		ascii = encoding == "ascii"
 
-		def escape(st):
+		def escape(st: str) -> str:
 			return dumps(st, ensure_ascii=ascii)
 
 		yield from writeTxt(

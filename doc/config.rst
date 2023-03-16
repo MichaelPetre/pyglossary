@@ -12,6 +12,8 @@ Configuration Parameters
 | ``auto_sqlite``              |                               | bool  | ``true``      | Auto-enable ``--sqlite`` to limit RAM usage when direct                     |
 |                              |                               |       |               | mode is not possible. Can override with ``--no-sqlite``                     |
 +------------------------------+-------------------------------+-------+---------------+-----------------------------------------------------------------------------+
+| ``optimize_memory``          | ``--optimize-memory``         | bool  | ``false``     | Optimize memory usage (over speed) in ``--indirect`` mode                   |
++------------------------------+-------------------------------+-------+---------------+-----------------------------------------------------------------------------+
 | ``enable_alts``              | | ``--alts``                  | bool  | ``true``      | Enable alternates                                                           |
 |                              | | ``--no-alts``               |       |               |                                                                             |
 +------------------------------+-------------------------------+-------+---------------+-----------------------------------------------------------------------------+
@@ -96,10 +98,10 @@ For example:
 
 .. code:: python
 
-    glos = Glossary()
-    glos.config = {
-        "lower": True,
-    }
+	glos = Glossary()
+	glos.config = {
+		"lower": True,
+	}
 
 
 .. |image0| image:: https://via.placeholder.com/20/ff0000/000000?text=+

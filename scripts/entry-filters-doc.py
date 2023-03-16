@@ -1,27 +1,20 @@
 #!/usr/bin/python3
 
 import sys
-import json
-from os.path import join, dirname, abspath
-from pprint import pprint
+from os.path import abspath, dirname, join
+
 from mako.template import Template
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from pyglossary.glossary import Glossary
-from pyglossary.core import userPluginsDir
+from pyglossary.entry_filters import entryFiltersRules
 from pyglossary.ui.base import UIBase
 
 ui = UIBase()
 ui.loadConfig(user=False)
 
 template = Template("""${entryFiltersTable}
-
-${"## The full list of entry filters"}
-
-Some entry filters are used more than once, or added based on other conditions than config (though they don't actually filter or modify entries).
-You can see [Glossary.entryFiltersRules](https://github.com/ilius/pyglossary/blob/master/pyglossary/glossary.py#L84) for a more complete list.
 """)
 
 
@@ -75,10 +68,9 @@ def renderTable(rows):
 	])
 
 
-def getCommandFlagsMD(configRule):
-	if configRule is None:
+def getCommandFlagsMD(name):
+	if name is None:
 		return ""
-	name = configRule[0]
 	opt = ui.configDefDict[name]
 	flag = name.replace("_", "-")
 
@@ -88,12 +80,11 @@ def getCommandFlagsMD(configRule):
 	return f"`--{flag}`"
 
 
-for configRule, filterClass in Glossary.entryFiltersRules:
-	if configRule is None:
+for configParam, default, filterClass in entryFiltersRules:
+	if configParam is None:
 		continue
-	name, default = configRule
-	assert ui.config[name] == default
-	assert filterClass.name == name
+	assert ui.config[configParam] == default
+	assert filterClass.name == configParam
 
 
 entryFiltersTable = "## Entry Filters\n\n" + renderTable(
@@ -105,11 +96,11 @@ entryFiltersTable = "## Entry Filters\n\n" + renderTable(
 	)] + [
 		(
 			codeValue(filterClass.name),
-			yesNo(configRule is None or bool(configRule[1])),
-			getCommandFlagsMD(configRule),
+			yesNo(bool(default)),
+			getCommandFlagsMD(configParam),
 			filterClass.desc,
 		)
-		for configRule, filterClass in Glossary.entryFiltersRules
+		for configParam, default, filterClass in entryFiltersRules
 	],
 )
 

@@ -40,67 +40,70 @@ To use this user interface:
 # prompt_toolkit also supports ncurses-like dialogs with buttons and widgets,
 # but I prefer this kind of UI with auto-completion and history
 
-import sys
-import os
-from os.path import (
-	dirname,
-	join,
-	abspath,
-	relpath,
-	isdir,
-	isabs,
-)
-import logging
-from collections import OrderedDict
 import argparse
-import shlex
-
 import json
+import logging
+import os
+import shlex
+import typing
+from collections import OrderedDict
+from os.path import (
+	abspath,
+	dirname,
+	isabs,
+	isdir,
+	join,
+	relpath,
+)
+from typing import TYPE_CHECKING, Dict, Iterable, Literal
+
+if TYPE_CHECKING:
+	from pyglossary.option import Option
+
+import prompt_toolkit
+from prompt_toolkit import ANSI
+from prompt_toolkit import prompt as promptLow
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import (
+	Completion,
+	PathCompleter,
+	WordCompleter,
+)
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.shortcuts import PromptSession, confirm
 
 from pyglossary import core
 from pyglossary.core import confDir
-from pyglossary.glossary import Glossary
+from pyglossary.glossary_v2 import Glossary
+from pyglossary.plugin_prop import PluginProp
+from pyglossary.sort_keys import lookupSortKey, namedSortKeyList
 from pyglossary.ui import ui_cmd
-from pyglossary.sort_keys import namedSortKeyList, namedSortKeyByName
-
-
-from prompt_toolkit import prompt as promptLow
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import (
-	WordCompleter,
-	PathCompleter,
-	Completion,
-)
-from prompt_toolkit import ANSI
-from prompt_toolkit.shortcuts import confirm, PromptSession
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.keys import Keys
-
 
 endFormat = "\x1b[0;0;0m"
 
 
 class MiniCheckBoxPrompt(object):
 	def __init__(
-		self,
+		self: "typing.Self",
 		message: str = "",
 		fmt: str = "{message}: {check}",
 		value: bool = False,
-	):
+	) -> None:
 		self.message = message
 		self.fmt = fmt
 		self.value = value
 
-	def formatMessage(self):
+	def formatMessage(self: "typing.Self"):
 		msg = self.fmt.format(
 			check="[x]" if self.value else "[ ]",
 			message=self.message,
 		)
 		# msg = ANSI(msg)  # NOT SUPPORTED
-		return msg
+		return msg  # noqa: RET504
 
-	def __pt_formatted_text__(self):
+	def __pt_formatted_text__(self: "typing.Self"):
 		return [("", self.formatMessage())]
 
 
@@ -116,7 +119,7 @@ def checkbox_prompt(
 	check = MiniCheckBoxPrompt(message=message, value=default)
 
 	@bindings.add(" ")
-	def space(event: "E") -> None:
+	def space(event: "prompt_toolkit.E") -> None:
 		check.value = not check.value
 		# cursor_pos = check.formatMessage().find("[") + 1
 		# cur_cursor_pos = session.default_buffer.cursor_position
@@ -124,14 +127,13 @@ def checkbox_prompt(
 		# session.default_buffer.cursor_position = cursor_pos
 
 	@bindings.add(Keys.Any)
-	def _(event: "E") -> None:
+	def _(event: "prompt_toolkit.E") -> None:
 		" Disallow inserting other text. "
-		pass
 
 	complete_message = check
 	session: PromptSession[bool] = PromptSession(
 		complete_message,
-		key_bindings=bindings
+		key_bindings=bindings,
 	)
 	session.prompt()
 	return check.value
@@ -198,9 +200,9 @@ def prompt(
 		text = promptLow(
 			message="",
 			multiline=True,
-			**kwargs
+			**kwargs,
 		)
-	return text
+	return text  # noqa: RET504
 
 
 back = "back"
@@ -208,21 +210,21 @@ back = "back"
 
 class MyPathCompleter(PathCompleter):
 	def __init__(
-		self,
+		self: "typing.Self",
 		reading: bool,
 		fs_action_names=None,
-		**kwargs
-	):
+		**kwargs,
+	) -> None:
 		PathCompleter.__init__(
 			self,
 			file_filter=self.file_filter,
-			**kwargs
+			**kwargs,
 		)
 		if fs_action_names is None:
 			fs_action_names = []
 		self.fs_action_names = fs_action_names
 
-	def file_filter(self, filename: str) -> bool:
+	def file_filter(self: "typing.Self", filename: str) -> bool:
 		# filename is full/absolute file path
 		return True
 
@@ -230,9 +232,9 @@ class MyPathCompleter(PathCompleter):
 	# 	log.error(f"Exception in get_completions: {e}")
 
 	def get_completions(
-		self,
-		document: "Document",
-		complete_event: "CompleteEvent",
+		self: "typing.Self",
+		document: "prompt_toolkit.Document",
+		complete_event: "prompt_toolkit.CompleteEvent",
 	) -> "Iterable[Completion]":
 		text = document.text_before_cursor
 
@@ -252,7 +254,7 @@ class MyPathCompleter(PathCompleter):
 
 
 class AbsolutePathHistory(FileHistory):
-	def load_history_strings(self) -> "Iterable[str]":
+	def load_history_strings(self: "typing.Self") -> "Iterable[str]":
 		# pwd = os.getcwd()
 		pathList = FileHistory.load_history_strings(self)
 		return [
@@ -260,12 +262,15 @@ class AbsolutePathHistory(FileHistory):
 			for p in pathList
 		]
 
-	def store_string(self, string: str) -> None:
+	def store_string(self: "typing.Self", string: str) -> None:
 		FileHistory.store_string(self, abspath(string))
 
 
 class UI(ui_cmd.UI):
-	def __init__(self):
+	def __init__(
+		self: "typing.Self",
+		progressbar: bool = True,
+	) -> None:
 		self._inputFilename = ""
 		self._outputFilename = ""
 		self._inputFormat = ""
@@ -274,7 +279,10 @@ class UI(ui_cmd.UI):
 		self._readOptions = None
 		self._writeOptions = None
 		self._convertOptions = None
-		ui_cmd.UI.__init__(self)
+		ui_cmd.UI.__init__(
+			self,
+			progressbar=progressbar,
+		)
 
 		self.ls_parser = argparse.ArgumentParser(add_help=False)
 		self.ls_parser.add_argument(
@@ -319,19 +327,19 @@ class UI(ui_cmd.UI):
 			("back", None),
 		])
 
-	def fs_pwd(self, args: "List[str]"):
+	def fs_pwd(self: "typing.Self", args: "list[str]"):
 		print(os.getcwd())
 
 	def get_ls_l(
-		self,
+		self: "typing.Self",
 		arg: str,
-		st: "Optional[os.stat_result]" = None,
+		st: "os.stat_result | None" = None,
 		parentDir: str = "",
 		sizeWidth: int = 0,
 	) -> str:
-		import stat
-		import pwd
 		import grp
+		import pwd
+		import stat
 		import time
 		argPath = arg
 		if parentDir:
@@ -351,7 +359,7 @@ class UI(ui_cmd.UI):
 			details.append(f"-> {os.readlink(argPath)}")
 		return "  ".join(details)
 
-	def fs_ls(self, args: "List[str]"):
+	def fs_ls(self: "typing.Self", args: "list[str]"):
 		opts, args = self.ls_parser.parse_known_args(args=args)
 
 		if opts.help:
@@ -400,7 +408,7 @@ class UI(ui_cmd.UI):
 					sizeWidth=sizeWidth,
 				))
 
-	def fs_cd_parent(self, args: "List[str]"):
+	def fs_cd_parent(self: "typing.Self", args: "list[str]"):
 		if args:
 			log.error("This command does not take arguments")
 			return
@@ -408,7 +416,7 @@ class UI(ui_cmd.UI):
 		os.chdir(newDir)
 		print(f"Changed current directory to: {newDir}")
 
-	def fs_cd(self, args: "List[str]"):
+	def fs_cd(self: "typing.Self", args: "list[str]"):
 		if len(args) != 1:
 			log.error("This command takes exactly one argument")
 			return
@@ -418,7 +426,7 @@ class UI(ui_cmd.UI):
 		os.chdir(newDir)
 		print(f"Changed current directory to: {newDir}")
 
-	def formatPromptMsg(self, level, msg, colon=":"):
+	def formatPromptMsg(self: "typing.Self", level, msg, colon=":"):
 		indent = self.promptIndentStr * level
 
 		if core.noColor:
@@ -432,19 +440,25 @@ class UI(ui_cmd.UI):
 
 		return f"{indent} {msg}{colon} ", True
 
-	def prompt(self, level, msg, colon=":", **kwargs):
+	def prompt(self: "typing.Self", level, msg, colon=":", **kwargs):
 		msg, colored = self.formatPromptMsg(level, msg, colon)
 		if colored:
 			msg = ANSI(msg)
 		return prompt(msg, **kwargs)
 
-	def checkbox_prompt(self, level, msg, colon=":", **kwargs):
+	def checkbox_prompt(self: "typing.Self", level, msg, colon=":", **kwargs):
 		# FIXME: colors are not working, they are being escaped
 		msg = f"{self.promptIndentStr * level} {msg}{colon} "
 		# msg, colored = self.formatPromptMsg(level, msg, colon)
 		return checkbox_prompt(msg, **kwargs)
 
-	def askFile(self, kind: str, histName: str, varName: str, reading: bool):
+	def askFile(
+		self: "typing.Self",
+		kind: str,
+		histName: str,
+		varName: str,
+		reading: bool,
+	):
 		from shlex import split as shlex_split
 		history = AbsolutePathHistory(join(histDir, histName))
 		auto_suggest = AutoSuggestFromHistory()
@@ -469,7 +483,7 @@ class UI(ui_cmd.UI):
 				actionFunc, usage = self._fsActions[parts[0]]
 				try:
 					actionFunc(parts[1:])
-				except Exception as e:
+				except Exception:
 					log.exception("")
 					if usage:
 						print("\n" + usage)
@@ -478,7 +492,7 @@ class UI(ui_cmd.UI):
 			return filename
 		raise ValueError(f"{kind} is not given")
 
-	def askInputFile(self):
+	def askInputFile(self: "typing.Self"):
 		return self.askFile(
 			"Input file",
 			"filename-input",
@@ -486,7 +500,7 @@ class UI(ui_cmd.UI):
 			True,
 		)
 
-	def askOutputFile(self):
+	def askOutputFile(self: "typing.Self"):
 		return self.askFile(
 			"Output file",
 			"filename-output",
@@ -494,7 +508,7 @@ class UI(ui_cmd.UI):
 			False,
 		)
 
-	def pluginByNameOrDesc(self, value: str) -> "Optional[PluginProp]":
+	def pluginByNameOrDesc(self: "typing.Self", value: str) -> "PluginProp | None":
 		plugin = pluginByDesc.get(value)
 		if plugin:
 			return plugin
@@ -504,7 +518,7 @@ class UI(ui_cmd.UI):
 		log.error(f"internal error: invalid format name/desc {value!r}")
 		return None
 
-	def askInputFormat(self) -> str:
+	def askInputFormat(self: "typing.Self") -> str:
 		history = FileHistory(join(histDir, "format-input"))
 		auto_suggest = AutoSuggestFromHistory()
 		completer = WordCompleter(
@@ -528,7 +542,7 @@ class UI(ui_cmd.UI):
 				return plugin.name
 		raise ValueError("input format is not given")
 
-	def askOutputFormat(self) -> str:
+	def askOutputFormat(self: "typing.Self") -> str:
 		history = FileHistory(join(histDir, "format-output"))
 		auto_suggest = AutoSuggestFromHistory()
 		completer = WordCompleter(
@@ -552,19 +566,19 @@ class UI(ui_cmd.UI):
 				return plugin.name
 		raise ValueError("output format is not given")
 
-	def finish(self):
+	def finish(self: "typing.Self"):
 		pass
 
 	# TODO: how to handle \r and \n in NewlineOption.values?
 
-	def getOptionValueSuggestValues(self, option: "option.Option"):
+	def getOptionValueSuggestValues(self: "typing.Self", option: "Option"):
 		if option.values:
 			return [str(x) for x in option.values]
 		if option.typ == "bool":
 			return ["True", "False"]
 		return None
 
-	def getOptionValueCompleter(self, option: "option.Option"):
+	def getOptionValueCompleter(self: "typing.Self", option: "Option"):
 		values = self.getOptionValueSuggestValues(option)
 		if values:
 			return WordCompleter(
@@ -575,8 +589,8 @@ class UI(ui_cmd.UI):
 			)
 		return None
 
-	def askReadOptions(self):
-		plugin = Glossary.plugins[self._inputFormat]
+	def askReadOptions(self: "typing.Self"):
+		Glossary.plugins[self._inputFormat]
 		options = Glossary.formatsReadOptions.get(self._inputFormat)
 		if options is None:
 			log.error(f"internal error: invalid format {self._inputFormat!r}")
@@ -641,15 +655,15 @@ class UI(ui_cmd.UI):
 				if not ok or not option.validate(valueNew):
 					log.error(
 						f"Invalid read option value {optName}={value!r}"
-						f" for format {self._inputFormat}"
+						f" for format {self._inputFormat}",
 					)
 					continue
 				print(f"Set read-option: {optName} = {valueNew!r}")
 				self._readOptions[optName] = valueNew
 				break
 
-	def askWriteOptions(self):
-		plugin = Glossary.plugins[self._inputFormat]
+	def askWriteOptions(self: "typing.Self"):
+		Glossary.plugins[self._inputFormat]
 		options = Glossary.formatsWriteOptions.get(self._outputFormat)
 		if options is None:
 			log.error(f"internal error: invalid format {self._outputFormat!r}")
@@ -714,20 +728,20 @@ class UI(ui_cmd.UI):
 				if not ok or not option.validate(valueNew):
 					log.error(
 						f"Invalid write option value {optName}={value!r}"
-						f" for format {self._outputFormat}"
+						f" for format {self._outputFormat}",
 					)
 					continue
 				print(f"Set write-option: {optName} = {valueNew!r}")
 				self._writeOptions[optName] = valueNew
 				break
 
-	def resetReadOptions(self):
+	def resetReadOptions(self: "typing.Self"):
 		self._readOptions = {}
 
-	def resetWriteOptions(self):
+	def resetWriteOptions(self: "typing.Self"):
 		self._writeOptions = {}
 
-	def askConfigValue(self, configKey, option):
+	def askConfigValue(self: "typing.Self", configKey, option):
 		default = self.config.get(configKey, "")
 		if option.typ == "bool":
 			return str(self.checkbox_prompt(
@@ -743,9 +757,9 @@ class UI(ui_cmd.UI):
 			completer=self.getOptionValueCompleter(option),
 		)
 
-	def askConfig(self):
+	def askConfig(self: "typing.Self"):
 		configKeys = list(sorted(self.configDefDict.keys()))
-		history = FileHistory(join(histDir, f"config-key"))
+		history = FileHistory(join(histDir, "config-key"))
 		auto_suggest = AutoSuggestFromHistory()
 		completer = WordCompleter(
 			configKeys,
@@ -781,7 +795,7 @@ class UI(ui_cmd.UI):
 				valueNew, ok = option.evaluate(value)
 				if not ok or not option.validate(valueNew):
 					log.error(
-						f"Invalid config value {configKey}={value!r}"
+						f"Invalid config value {configKey}={value!r}",
 					)
 					continue
 				print(f"Set config: {configKey} = {valueNew!r}")
@@ -789,39 +803,38 @@ class UI(ui_cmd.UI):
 				self.config[configKey] = valueNew
 				break
 
-	def showOptions(self):
+	def showOptions(self: "typing.Self"):
 		print(f"readOptions = {self._readOptions}")
 		print(f"writeOptions = {self._writeOptions}")
 		print(f"convertOptions = {self._convertOptions}")
 		print(f"config = {self.config}")
 		print()
 
-	def setIndirect(self):
+	def setIndirect(self: "typing.Self"):
 		self._convertOptions["direct"] = False
 		self._convertOptions["sqlite"] = None
 		print("Switched to indirect mode")
 
-	def setSQLite(self):
+	def setSQLite(self: "typing.Self"):
 		self._convertOptions["direct"] = None
 		self._convertOptions["sqlite"] = True
 		print("Switched to SQLite mode")
 
-	def setNoProgressbar(self):
+	def setNoProgressbar(self: "typing.Self"):
 		self._convertOptions["progressbar"] = False
 		print("Disabled progress bar")
 
-	def setSort(self):
-		from pyglossary.entry import Entry
+	def setSort(self: "typing.Self"):
 		try:
 			value = self.checkbox_prompt(
-				2, f"Enable Sort",
+				2, "Enable Sort",
 				default=self._convertOptions.get("sort", False),
 			)
 		except (KeyboardInterrupt, EOFError):
 			return
 		self._convertOptions["sort"] = value
 
-	def setSortKey(self):
+	def setSortKey(self: "typing.Self"):
 		completer = WordCompleter(
 			[_sk.name for _sk in namedSortKeyList],
 			ignore_case=False,
@@ -831,7 +844,7 @@ class UI(ui_cmd.UI):
 		default = self._convertOptions.get("sortKeyName", "")
 		sortKeyName = self.prompt(
 			2, "SortKey",
-			history=FileHistory(join(histDir, f"sort-key")),
+			history=FileHistory(join(histDir, "sort-key")),
 			auto_suggest=AutoSuggestFromHistory(),
 			default=default,
 			completer=completer,
@@ -841,7 +854,7 @@ class UI(ui_cmd.UI):
 				del self._convertOptions["sortKeyName"]
 			return
 
-		if sortKeyName not in namedSortKeyByName:
+		if not lookupSortKey(sortKeyName):
 			log.error(f"invalid {sortKeyName = }")
 			return
 
@@ -850,7 +863,7 @@ class UI(ui_cmd.UI):
 		if not self._convertOptions.get("sort"):
 			self.setSort()
 
-	def askFinalAction(self) -> "Optional[str]":
+	def askFinalAction(self: "typing.Self") -> "str | None":
 		history = FileHistory(join(histDir, "action"))
 		auto_suggest = AutoSuggestFromHistory()
 		completer = WordCompleter(
@@ -873,13 +886,13 @@ class UI(ui_cmd.UI):
 				continue
 			return action
 
-	def askFinalOptions(self) -> "Union[bool, Literal[back]]":
+	def askFinalOptions(self: "typing.Self") -> "bool | Literal['back']":
 		while True:
 			try:
 				action = self.askFinalAction()
 			except (KeyboardInterrupt, EOFError):
 				return False
-			except Exception as e:
+			except Exception:
 				log.exception("")
 				return False
 			if action == back:
@@ -893,7 +906,7 @@ class UI(ui_cmd.UI):
 
 		return True  # convert
 
-	def getRunKeywordArgs(self) -> "Dict":
+	def getRunKeywordArgs(self: "typing.Self") -> "Dict":
 		return dict(
 			inputFilename=self._inputFilename,
 			outputFilename=self._outputFilename,
@@ -906,7 +919,7 @@ class UI(ui_cmd.UI):
 			glossarySetAttrs=self._glossarySetAttrs,
 		)
 
-	def checkInputFormat(self, forceAsk: bool = False):
+	def checkInputFormat(self: "typing.Self", forceAsk: bool = False):
 		if not forceAsk:
 			inputArgs = Glossary.detectInputFormat(self._inputFilename, quiet=True)
 			if inputArgs:
@@ -915,7 +928,7 @@ class UI(ui_cmd.UI):
 				return
 		self._inputFormat = self.askInputFormat()
 
-	def checkOutputFormat(self, forceAsk: bool = False):
+	def checkOutputFormat(self: "typing.Self", forceAsk: bool = False):
 		if not forceAsk:
 			outputArgs = Glossary.detectOutputFormat(
 				filename=self._outputFilename,
@@ -927,17 +940,17 @@ class UI(ui_cmd.UI):
 				return
 		self._outputFormat = self.askOutputFormat()
 
-	def askFormats(self):
+	def askFormats(self: "typing.Self"):
 		self.checkInputFormat(forceAsk=True)
 		self.checkOutputFormat(forceAsk=True)
 
-	def askInputOutputAgain(self):
+	def askInputOutputAgain(self: "typing.Self"):
 		self.askInputFile()
 		self.checkInputFormat(forceAsk=True)
 		self.askOutputFile()
 		self.checkOutputFormat(forceAsk=True)
 
-	def printNonInteractiveCommand(self):
+	def printNonInteractiveCommand(self: "typing.Self"):
 		cmd = [
 			ui_cmd.COMMAND,
 			self._inputFilename,
@@ -1009,39 +1022,39 @@ class UI(ui_cmd.UI):
 		print()
 		print(
 			"If you want to repeat this conversion later, "
-			"you can use this command:"
+			"you can use this command:",
 		)
 		# shlex.join is added in Python 3.8
 		print(shlex.join(cmd))
 
-	def setConfigAttrs(self):
+	def setConfigAttrs(self: "typing.Self"):
 		config = self.config
 		self.promptIndentStr = config.get("cmdi.prompt.indent.str", ">")
 		self.promptIndentColor = config.get("cmdi.prompt.indent.color", 2)
 		self.promptMsgColor = config.get("cmdi.prompt.msg.color", -1)
 		self.msgColor = config.get("cmdi.msg.color", -1)
 
-	def main(self, again=False):
+	def main(self: "typing.Self", again=False):
 		if again or not self._inputFilename:
 			try:
 				self.askInputFile()
 			except (KeyboardInterrupt, EOFError):
-				return
+				return None
 		if again or not self._inputFormat:
 			try:
 				self.checkInputFormat()
 			except (KeyboardInterrupt, EOFError):
-				return
+				return None
 		if again or not self._outputFilename:
 			try:
 				self.askOutputFile()
 			except (KeyboardInterrupt, EOFError):
-				return
+				return None
 		if again or not self._outputFormat:
 			try:
 				self.checkOutputFormat()
 			except (KeyboardInterrupt, EOFError):
-				return
+				return None
 
 		while True:
 			status = self.askFinalOptions()
@@ -1049,10 +1062,10 @@ class UI(ui_cmd.UI):
 				self.askInputOutputAgain()
 				continue
 			if not status:
-				return
+				return None
 			try:
 				succeed = ui_cmd.UI.run(self, **self.getRunKeywordArgs())
-			except Exception as e:
+			except Exception:
 				log.exception("")
 			else:
 				self.printNonInteractiveCommand()
@@ -1061,17 +1074,17 @@ class UI(ui_cmd.UI):
 			print("Press Control + C to exit")
 
 	def run(
-		self,
+		self: "typing.Self",
 		inputFilename: str = "",
 		outputFilename: str = "",
 		inputFormat: str = "",
 		outputFormat: str = "",
 		reverse: bool = False,
-		config: "Optional[Dict]" = None,
-		readOptions: "Optional[Dict]" = None,
-		writeOptions: "Optional[Dict]" = None,
-		convertOptions: "Optional[Dict]" = None,
-		glossarySetAttrs: "Optional[Dict]" = None,
+		config: "Dict | None" = None,
+		readOptions: "Dict | None" = None,
+		writeOptions: "Dict | None" = None,
+		convertOptions: "Dict | None" = None,
+		glossarySetAttrs: "Dict | None" = None,
 	):
 		if config is None:
 			config = {}

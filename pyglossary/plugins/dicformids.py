@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
+import os
 import re
+import typing
+from os.path import join
+from typing import Iterator
 
+from pyglossary.core import log
+from pyglossary.flags import ALWAYS
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import Option
 from pyglossary.plugins.tabfile import Reader as TabfileReader
-from pyglossary.plugins.formats_common import *
 
 lname = "dicformids"
 enable = True
@@ -20,7 +27,7 @@ website = (
 	"DictionaryForMIDs - SourceForge",
 )
 
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}
 
 
 PROP_TEMPLATE = """#DictionaryForMIDs property file
@@ -59,12 +66,12 @@ language1NormationClassName=de.kugihan.dictionaryformids.translation.NormationEn
 class Reader(object):
 	re_number = re.compile(r"\d+")
 
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._tabFileNames = []
 		self._tabFileReader = None
 
-	def open(self, dirname):
+	def open(self: "typing.Self", dirname: str) -> None:
 		self._dirname = dirname
 		orderFileNames = []
 		for fname in os.listdir(dirname):
@@ -83,13 +90,13 @@ class Reader(object):
 		self._tabFileNames = [x[1] for x in orderFileNames]
 		self.nextTabFile()
 
-	def __len__(self):  # FIXME
-		raise NotImplementedError
+	def __len__(self: "typing.Self") -> int:
+		raise NotImplementedError  # FIXME
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		return self
 
-	def __next__(self):
+	def __next__(self: "typing.Self") -> "EntryType":
 		for _ in range(10):
 			try:
 				return next(self._tabFileReader)
@@ -97,26 +104,26 @@ class Reader(object):
 				self._tabFileReader.close()
 				self.nextTabFile()
 
-	def nextTabFile(self):
+	def nextTabFile(self: "typing.Self") -> None:
 		try:
 			tabFileName = self._tabFileNames.pop()
 		except IndexError:
-			raise StopIteration
+			raise StopIteration from None
 		self._tabFileReader = TabfileReader(self._glos, hasInfo=False)
-		self._tabFileReader.open(join(self._dirname, tabFileName))
+		self._tabFileReader.open(join(self._dirname, tabFileName), newline="\n")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._tabFileReader:
 			try:
 				self._tabFileReader.close()
 			except Exception:
-				pass
+				pass  # noqa: S110
 		self._tabFileReader = None
 		self._tabFileNames = []
 
 
 class Writer(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self.linesPerDirectoryFile = 500  # 200
 		self.indexFileMaxSize = 32722  # 30000
@@ -132,20 +139,21 @@ class Writer(object):
 		self.re_spaces = re.compile(" +")
 		self.re_tabs = re.compile("\t+")
 
-	def normateWord(self, word: str) -> str:
+	def normateWord(self: "typing.Self", word: str) -> str:
 		word = word.strip()
 		word = self.re_punc.sub("", word)
 		word = self.re_spaces.sub(" ", word)
 		word = self.re_tabs.sub(" ", word)
 		word = word.lower()
-		return word
+		return word  # noqa: RET504
 
-	def writeProbs(self):
+	def writeProbs(self: "typing.Self") -> None:
 		glos = self._glos
-		with open(join(
+		probsPath = join(
 			self._dirname,
 			"DictionaryForMIDs.properties",
-		), "w") as fileObj:
+		)
+		with open(probsPath, mode="w", newline="\n") as fileObj:
 			fileObj.write(PROP_TEMPLATE.format(
 				name=glos.getInfo("name"),
 				author=glos.author,
@@ -158,7 +166,7 @@ class Writer(object):
 				targetLang=glos.targetLangName,
 			))
 
-	def nextIndex(self):
+	def nextIndex(self: "typing.Self") -> None:
 		try:
 			self.indexFp.close()
 		except AttributeError:
@@ -167,32 +175,32 @@ class Writer(object):
 		self.indexIndex += 1
 		fname = f"index{self.indexPostfix}{self.indexIndex}.csv"
 		fpath = join(self._dirname, fname)
-		self.indexFp = open(fpath, mode="w", encoding="utf-8")
+		self.indexFp = open(fpath, mode="w", encoding="utf-8", newline="\n")
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		pass
 
-	def open(self, dirname: str):
+	def open(self: "typing.Self", dirname: str) -> None:
 		self._dirname = dirname
 		if not os.path.isdir(dirname):
 			os.mkdir(dirname)
 
-	def write(self):
+	def write(self: "typing.Self") -> None:
 		self.nextIndex()
 
 		dicMaxSize = 0
 		indexData = []
 
-		def writeBucket(dicIndex: int, entryList: "List[BaseEntry]"):
+		def writeBucket(dicIndex: int, entryList: "list[EntryType]") -> None:
 			nonlocal dicMaxSize
 			log.debug(
 				f"{dicIndex=}, {len(entryList)=}"
-				f", {dicMaxSize=}"
+				f", {dicMaxSize=}",
 			)
 			dicFp = open(join(
 				self._dirname,
 				f"directory{self.directoryPostfix}{dicIndex+1}.csv",
-			), mode="w", encoding="utf-8")
+			), mode="w", encoding="utf-8", newline="\n")
 			for entry in entryList:
 				word = entry.s_word
 				n_word = self.normateWord(word)
@@ -232,8 +240,8 @@ class Writer(object):
 
 		langSearchListFp = open(join(
 			self._dirname,
-			f"searchlist{self.directoryPostfix}.csv"
-		), mode="w", encoding="utf-8")
+			f"searchlist{self.directoryPostfix}.csv",
+		), mode="w", newline="\n", encoding="utf-8")
 
 		langSearchListFp.write(f"{indexData[0][0]}\t{self.indexIndex}\n")
 

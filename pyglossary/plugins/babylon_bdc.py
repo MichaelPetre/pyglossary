@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from pyglossary.plugins.formats_common import *
+
+from pyglossary.option import Option
 
 enable = False
 lname = "babylon_bdc"
@@ -11,4 +12,4 @@ singleFile = True
 kind = "binary"
 wiki = ""
 website = None
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}

@@ -18,44 +18,50 @@
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
 import logging
-import sys
 import os
+import sys
+import types
+from os.path import isdir, join
+from typing import Any
 
-from .plugin_prop import PluginProp
+from . import core
+from .core import (
+	cacheDir,
+	dataDir,
+	pluginsDir,
+	userPluginsDir,
+)
 from .glossary_utils import (
 	splitFilenameExt,
 )
-from . import core
-from .core import (
-	pluginsDir,
-)
+from .plugin_prop import PluginProp
 
 log = logging.getLogger("pyglossary")
 
 
 class PluginManager(object):
-	plugins = {}  # type: Dict[str, PluginProp]
-	pluginByExt = {}  # type: Dict[str, PluginProp]
-	loadedModules = set()
+	plugins: "dict[str, PluginProp]" = {}
+	pluginByExt: "dict[str, PluginProp]" = {}
+	loadedModules: "set[types.ModuleType]" = set()
 
-	formatsReadOptions = {}  # type: Dict[str, OrderedDict[str, Any]]
-	formatsWriteOptions = {}  # type: Dict[str, OrderedDict[str, Any]]
+	formatsReadOptions: "dict[str, dict[str, Any]]" = {}
+	formatsWriteOptions: "dict[str, dict[str, Any]]" = {}
 	# for example formatsReadOptions[format][optName] gives you the default value
 
-	readFormats = []  # type: List[str]
-	writeFormats = []  # type: List[str]
+	readFormats: "list[str]" = []
+	writeFormats: "list[str]" = []
 
 	@classmethod
-	def loadPluginsFromJson(cls: "ClassVar", jsonPath: str) -> None:
+	def loadPluginsFromJson(cls: "type", jsonPath: str) -> None:
 		import json
-		from os.path import dirname, join
+		from os.path import join
 
 		with open(jsonPath) as _file:
 			data = json.load(_file)
 
 		for attrs in data:
 			moduleName = attrs["module"]
-			cls.loadPluginByDict(
+			cls._loadPluginByDict(
 				attrs=attrs,
 				modulePath=join(pluginsDir, moduleName),
 			)
@@ -63,7 +69,7 @@ class PluginManager(object):
 
 	@classmethod
 	def loadPlugins(
-		cls: "ClassVar",
+		cls: "type",
 		directory: str,
 		skipDisabled: bool = True,
 	) -> None:
@@ -83,19 +89,19 @@ class PluginManager(object):
 			moduleName
 			for _, moduleName, _ in pkgutil.iter_modules([directory])
 			if moduleName not in cls.loadedModules and
-			moduleName not in ("paths", "formats_common")
+			moduleName not in ("formats_common",)
 		]
 		moduleNames.sort()
 
 		sys.path.append(directory)
 		for moduleName in moduleNames:
-			cls.loadPlugin(moduleName, skipDisabled=skipDisabled)
+			cls._loadPlugin(moduleName, skipDisabled=skipDisabled)
 		sys.path.pop()
 
 	@classmethod
-	def loadPluginByDict(
-		cls: "ClassVar",
-		attrs: "Dict[str, Any]",
+	def _loadPluginByDict(
+		cls: "type",
+		attrs: "dict[str, Any]",
 		modulePath: str,
 	) -> None:
 		format = attrs["name"]
@@ -105,6 +111,8 @@ class PluginManager(object):
 			attrs=attrs,
 			modulePath=modulePath,
 		)
+		if prop is None:
+			return
 
 		cls.plugins[format] = prop
 		cls.loadedModules.add(attrs["module"])
@@ -114,7 +122,7 @@ class PluginManager(object):
 
 		for ext in extensions:
 			if ext.lower() != ext:
-				log.error(f"non-lowercase extension={ext!r} in {moduleName} plugin")
+				log.error(f"non-lowercase extension={ext!r} in {prop.name} plugin")
 			cls.pluginByExt[ext.lstrip(".")] = prop
 			cls.pluginByExt[ext] = prop
 
@@ -130,8 +138,8 @@ class PluginManager(object):
 			prop.module  # to make sure importing works
 
 	@classmethod
-	def loadPlugin(
-		cls: "ClassVar",
+	def _loadPlugin(
+		cls: "type",
 		moduleName: str,
 		skipDisabled: bool = True,
 	) -> None:
@@ -141,7 +149,7 @@ class PluginManager(object):
 		except ModuleNotFoundError as e:
 			log.warning(f"Module {e.name!r} not found, skipping plugin {moduleName!r}")
 			return
-		except Exception as e:
+		except Exception:
 			log.exception(f"Error while importing plugin {moduleName}")
 			return
 
@@ -177,7 +185,7 @@ class PluginManager(object):
 			cls.writeFormats.append(name)
 
 	@classmethod
-	def findPlugin(cls, query: str) -> "Optional[PluginProp]":
+	def _findPlugin(cls: "type", query: str) -> "PluginProp | None":
 		"""
 			find plugin by name or extension
 		"""
@@ -191,11 +199,11 @@ class PluginManager(object):
 
 	@classmethod
 	def detectInputFormat(
-		cls,
+		cls: "type",
 		filename: str,
 		format: str = "",
 		quiet: bool = False,
-	) -> "Optional[Tuple[str, str, str]]":
+	) -> "tuple[str, str, str] | None":
 		"""
 			returns (filename, format, compression) or None
 		"""
@@ -203,7 +211,7 @@ class PluginManager(object):
 		def error(msg: str) -> None:
 			if not quiet:
 				log.critical(msg)
-			return None
+			return
 
 		filenameOrig = filename
 		filenameNoExt, filename, ext, compression = splitFilenameExt(filename)
@@ -212,16 +220,19 @@ class PluginManager(object):
 		if format:
 			plugin = cls.plugins.get(format)
 			if plugin is None:
-				return error(f"Invalid format {format!r}")
+				error(f"Invalid format {format!r}")
+				return None
 		else:
 			plugin = cls.pluginByExt.get(ext)
 			if not plugin:
-				plugin = cls.findPlugin(filename)
+				plugin = cls._findPlugin(filename)
 				if not plugin:
-					return error("Unable to detect input format!")
+					error("Unable to detect input format!")
+					return None
 
 		if not plugin.canRead:
-			return error(f"plugin {plugin.name} does not support reading")
+			error(f"plugin {plugin.name} does not support reading")
+			return None
 
 		if compression in plugin.readCompressions:
 			compression = ""
@@ -231,13 +242,13 @@ class PluginManager(object):
 
 	@classmethod
 	def detectOutputFormat(
-		cls,
+		cls: "type",
 		filename: str = "",
 		format: str = "",
 		inputFilename: str = "",
 		quiet: bool = False,
 		addExt: bool = False,
-	) -> "Optional[Tuple[str, str, str]]":
+	) -> "tuple[str, str, str] | None":
 		"""
 		returns (filename, format, compression) or None
 		"""
@@ -246,7 +257,7 @@ class PluginManager(object):
 		def error(msg: str) -> None:
 			if not quiet:
 				log.critical(msg)
-			return None
+			return
 
 		plugin = None
 		if format:
@@ -270,7 +281,7 @@ class PluginManager(object):
 		if not plugin:
 			plugin = cls.pluginByExt.get(ext)
 			if not plugin:
-				plugin = cls.findPlugin(filename)
+				plugin = cls._findPlugin(filename)
 
 		if not plugin:
 			return error("Unable to detect output format!")
@@ -293,3 +304,31 @@ class PluginManager(object):
 				filename += plugin.ext
 
 		return filename, plugin.name, compression
+
+	@classmethod
+	def init(
+		cls: "type",
+		usePluginsJson: bool = True,
+		skipDisabledPlugins: bool = True,
+	) -> None:
+		"""
+		init() must be called only once, so make sure you put it in the
+		right place. Probably in the top of your program's main function or module.
+		"""
+
+		cls.readFormats = []
+		cls.writeFormats = []
+		pluginsJsonPath = join(dataDir, "plugins-meta", "index.json")
+
+		# even if usePluginsJson, we should still call loadPlugins to load
+		# possible new plugins that are not in json file
+
+		if usePluginsJson:
+			cls.loadPluginsFromJson(pluginsJsonPath)
+
+		cls.loadPlugins(pluginsDir, skipDisabled=skipDisabledPlugins)
+
+		if isdir(userPluginsDir):
+			cls.loadPlugins(userPluginsDir)
+
+		os.makedirs(cacheDir, mode=0o700, exist_ok=True)

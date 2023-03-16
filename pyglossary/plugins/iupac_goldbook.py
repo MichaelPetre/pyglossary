@@ -1,8 +1,23 @@
-# -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
-from pyglossary.html_utils import unescape_unicode
+import typing
+
+# -*- coding: utf-8 -*-
 from io import BytesIO
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+	from lxml.etree import Element
+from pyglossary.compression import (
+	compressionOpen,
+	stdCompressions,
+)
+from pyglossary.core import log, pip
+from pyglossary.glossary_types import (
+	EntryType,
+	GlossaryType,
+)
+from pyglossary.html_utils import unescape_unicode
+from pyglossary.option import Option
 
 enable = True
 lname = "iupac_goldbook"
@@ -14,7 +29,7 @@ singleFile = True
 kind = "text"
 wiki = ""
 website = "https://goldbook.iupac.org/"
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}
 
 
 class Reader(object):
@@ -24,17 +39,17 @@ class Reader(object):
 		"lxml": "lxml",
 	}
 
-	def __init__(self, glos: "GlossaryType") -> None:
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._filename = ""
 		self._file = None
 		self._fileSize = 0
 		self._termByCode = None
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		return 0
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		if self._file:
 			self._file.close()
 			self._file = None
@@ -42,7 +57,7 @@ class Reader(object):
 		self._fileSize = 0
 		self._termByCode = None
 
-	def open(self, filename) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		try:
 			from lxml import etree as ET
 		except ModuleNotFoundError as e:
@@ -67,10 +82,10 @@ class Reader(object):
 		context = ET.iterparse(
 			_file,
 			events=("end",),
-			tag=f"entry",
+			tag="entry",
 		)
 		termByCode = {}
-		for action, elem in context:
+		for _, elem in context:
 			termE = elem.find("./term")
 			if termE is None:
 				continue
@@ -83,19 +98,22 @@ class Reader(object):
 
 		_file.close()
 
-	def setGlosInfo(self, key: str, value: str) -> None:
+	def setGlosInfo(self: "typing.Self", key: str, value: str) -> None:
 		if value is None:
 			return
 		self._glos.setInfo(key, unescape_unicode(value))
 
-	def setMetadata(self, header):
+	def setMetadata(self: "typing.Self", header: str) -> None:
 		self.setGlosInfo("name", header.find("./title").text)
 		self.setGlosInfo("publisher", header.find("./publisher").text)
 		self.setGlosInfo("isbn", header.find("./isbn").text)
 		self.setGlosInfo("doi", header.find("./doi").text)
 		self.setGlosInfo("creationTime", header.find("./accessdate").text)
 
-	def tostring(self, elem: "lxml.etree.Element") -> str:
+	def tostring(
+		self: "typing.Self",
+		elem: "Element",
+	) -> str:
 		from lxml import etree as ET
 		return ET.tostring(
 			elem,
@@ -103,19 +121,19 @@ class Reader(object):
 			pretty_print=True,
 		).decode("utf-8").strip()
 
-	def innerXML(self, elem):
+	def innerXML(self: "typing.Self", elem: "Element") -> str:
 		from lxml import etree as ET
 		elemName = elem.xpath('name(/*)')
 		resultStr = ''
-		for e in elem.xpath('/'+ elemName + '/node()'):
-			if(isinstance(e, str) ):
+		for e in elem.xpath('/' + elemName + '/node()'):
+			if isinstance(e, str):
 				resultStr = resultStr + ''
 			else:
 				resultStr = resultStr + ET.tostring(e, encoding='unicode')
 
 		return resultStr
 
-	def getTerm(self, termE):
+	def getTerm(self: "typing.Self", termE: "Element") -> str:
 		from lxml import etree as ET
 		term = ET.tostring(
 			termE,
@@ -124,9 +142,9 @@ class Reader(object):
 		).decode("utf-8").strip()[6:-7].strip()
 		term = unescape_unicode(term)
 		term = term.replace("<i>", "").replace("</i>", "")
-		return term
+		return term  # noqa: RET504
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		from lxml import etree as ET
 
 		glos = self._glos
@@ -137,9 +155,9 @@ class Reader(object):
 		context = ET.iterparse(
 			self._file,
 			events=("end",),
-			tag=f"entry",
+			tag="entry",
 		)
-		for action, elem in context:
+		for _, elem in context:
 			codeE = elem.find("./code")
 			if codeE is None:
 				continue
@@ -159,8 +177,8 @@ class Reader(object):
 			if code:
 				words.append(code)
 
-			#if _id is not None:
-			#	words.append(f"id{_id}")
+			# if _id is not None:
+			# 	words.append(f"id{_id}")
 
 			identifierTerm = elem.find("./identifiers/term")
 			if identifierTerm is not None and identifierTerm.text:
@@ -200,9 +218,9 @@ class Reader(object):
 					log.warning(f"{term}: {replacedby=}")
 					replacedbyTerm = replacedbyCode
 				defiParts.append(
-					f'Replaced by: <a href="bword://{replacedbyTerm}">{replacedbyTerm}</a>'
+					f'Replaced by: <a href="bword://{replacedbyTerm}">{replacedbyTerm}</a>',
 				)
-			
+
 			relatedList = elem.findall("./related/entry")
 			if relatedList:
 				relatedLinkList = []
@@ -214,7 +232,7 @@ class Reader(object):
 						log.warning(f"{term}: {relatedURL=}")
 						relatedTerm = relatedCode
 					relatedLinkList.append(
-						f'<a href="bword://{relatedTerm}">{relatedTerm}</a>'
+						f'<a href="bword://{relatedTerm}">{relatedTerm}</a>',
 					)
 				defiParts.append("Related: " + ", ".join(relatedLinkList))
 

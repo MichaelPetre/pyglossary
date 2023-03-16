@@ -18,15 +18,21 @@
 Chinese wildcard and pinyin indexes.
 """
 
-from pyglossary.plugins.formats_common import log, pip
 import re
+from typing import Sequence
+
 import bs4
+
+from pyglossary.core import log, pip
 
 try:
 	import colorize_pinyin as color
 except ImportError:
-	log.error(f"""module colorize_pinyin is required to build extended Chinese indexes.
-You can install it by running: {pip} install colorize-pinyin""")
+	log.error(
+		"module colorize_pinyin is required to build extended Chinese"
+		" indexes. You can install it by running: "
+		f"{pip} install colorize-pinyin",
+	)
 	raise
 
 from . import languages, log
@@ -35,7 +41,7 @@ pinyinPattern = re.compile(r",|;")
 nonHieroglyphPattern = re.compile(r"[^\u4e00-\u9fff]")
 
 
-def zh(titles, content):
+def zh(titles: "Sequence[str]", content: str) -> "set[str]":
 	"""
 	Chinese indexes.
 
@@ -63,27 +69,27 @@ def zh(titles, content):
 	return indexes
 
 
-def pinyin_indexes(content):
+def pinyin_indexes(content: str) -> "set[str]":
 	pinyin = find_pinyin(content)
 	# assert type(pinyin) == unicode
 
 	if not pinyin or pinyin == "_":
-		return ()
+		return set()
 
 	indexes = set()
 
 	# multiple pronunciations
-	for pinyin in pinyinPattern.split(pinyin):
+	for pinyinPart in pinyinPattern.split(pinyin):
 
 		# find all pinyin ranges, use them to rip pinyin out
 		py = [
-			r._slice(pinyin)
-			for r in color.ranges_of_pinyin_in_string(pinyin)
+			r._slice(pinyinPart)
+			for r in color.ranges_of_pinyin_in_string(pinyinPart)
 		]
 
 		# maybe no pinyin here
 		if not py:
-			return ()
+			return set()
 
 		# just pinyin, with diacritics, separated by whitespace
 		indexes.add(color.utf(" ".join(py)) + ".")
@@ -94,21 +100,21 @@ def pinyin_indexes(content):
 				color.lowercase_string_by_removing_pinyin_tones(p) +
 				str(color.determine_tone(p))
 				for p in py
-			])) + "."
+			])) + ".",
 		)
 	return indexes
 
 
-def find_pinyin(content):
+def find_pinyin(content: str) -> "str | None":
 	# assume that content is HTML and pinyin is inside second tag
 	# (first is <h1>)
 	soup = bs4.BeautifulSoup(content.splitlines()[0], features="lxml")
 	if soup.body:
-		soup = soup.body
+		soup = soup.body  # type: ignore # noqa: PGH003
 	children = soup.children
 	try:
-		next(children)
-		pinyin = next(children)
+		next(children)  # type: ignore # noqa: PGH003
+		pinyin = next(children)  # type: ignore # noqa: PGH003
 	except StopIteration:
 		return None
 	return pinyin.text

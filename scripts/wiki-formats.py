@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
-import sys
 import os
-import json
-from os.path import join, dirname, abspath
-from pprint import pprint
+import sys
+from os.path import join
+
 from mako.template import Template
 
 rootDir = join(
@@ -51,11 +50,13 @@ hasIconSet = set([
 	"zim",
 ])
 
+
 def codeValue(x):
 	s = str(x)
 	if s:
 		return "`" + s + "`"
 	return ""
+
 
 def yesNo(x):
 	if x is True:
@@ -64,10 +65,15 @@ def yesNo(x):
 		return "No"
 	return ""
 
+
 def iconImg(p):
 	if p.lname not in hasIconSet:
 		return ""
-	return f'<img src="https://raw.githubusercontent.com/wiki/ilius/pyglossary/icons/{p.lname}.png" height="32"/>'
+	return (
+		'<img src="https://raw.githubusercontent.com/wiki/'
+		f'ilius/pyglossary/icons/{p.lname}.png" height="32"/>'
+	)
+
 
 def kindEmoji(p):
 	kind = p.module.kind
@@ -101,6 +107,7 @@ willNotSupportWrite = set([
 	"xdxf",
 ])
 
+
 def readCheck(p):
 	if p.lname in willNotSupportRead:
 		return "❌"
@@ -110,7 +117,7 @@ def readCheck(p):
 def writeCheck(p):
 	if p.lname in willNotSupportWrite:
 		return "❌"
-	return "✔" if p.canRead else ""
+	return "✔" if p.canWrite else ""
 
 
 template = Template("""
@@ -147,6 +154,5 @@ text = template.render(
 	readCheck=readCheck,
 	writeCheck=writeCheck,
 )
-with open("Formats.md", mode="w") as _file:
+with open("Formats.md", mode="w", encoding="utf-8") as _file:
 	_file.write(text)
-

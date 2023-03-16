@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
 import html
+import typing
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+	import sqlite3
+
+from pyglossary.glossary_types import EntryType, GlossaryType
 
 enable = True
 lname = "digitalnk"
@@ -16,31 +22,36 @@ website = (
 	"@digitalprk/dicrs",
 )
 
+
 class Reader(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
-		self._filename = ''
-		self._con = None
-		self._cur = None
+	def _clear(self: "typing.Self") -> None:
+		self._filename = ""
+		self._con: "sqlite3.Connection | None" = None
+		self._cur: "sqlite3.Cursor | None" = None
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		from sqlite3 import connect
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		self._glos.setDefaultDefiFormat("m")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute("select count(*) from dictionary")
 		return self._cur.fetchone()[0]
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute(
 			"select word, definition from dictionary"
-			" order by word"
+			" order by word",
 		)
 		# iteration over self._cur stops after one entry
 		# and self._cur.fetchone() returns None
@@ -52,7 +63,7 @@ class Reader(object):
 			definition = row[1]
 			yield self._glos.newEntry(word, definition, defiFormat="m")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

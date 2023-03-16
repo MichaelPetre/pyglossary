@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
 import html
+import typing
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+	import sqlite3
+
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
 
 enable = True
 lname = "dict_cc_split"
@@ -18,30 +25,38 @@ website = (
 
 
 class Reader(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ''
-		self._con = None
-		self._cur = None
+		self._con: "sqlite3.Connection | None" = None
+		self._cur: "sqlite3.Cursor | None" = None
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		from sqlite3 import connect
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		self._glos.setDefaultDefiFormat("m")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute("select count(*) * 2 from main_ft")
 		return self._cur.fetchone()[0]
 
-	def iterRows(self, column1, column2):
+	def iterRows(
+		self: "typing.Self",
+		column1: str,
+		column2: str,
+	) -> "Iterator[tuple[str, str, str]]":
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute(
 			f"select {column1}, {column2}, entry_type from main_ft"
-			f" order by {column1}"
+			f" order by {column1}",
 		)
 		for row in self._cur.fetchall():
 			term1 = row[0]
@@ -56,17 +71,21 @@ class Reader(object):
 				log.error(f"html.unescape({term2!r}) -> {e}")
 			yield term1, term2, row[2]
 
-	def _iterOneDirection(self, column1, column2):
+	def _iterOneDirection(
+		self: "typing.Self",
+		column1: str,
+		column2: str,
+	) -> "Iterator[EntryType]":
 		for word, defi, entry_type in self.iterRows(column1, column2):
 			if entry_type:
 				word = f"{word} {{{entry_type}}}"
 			yield self._glos.newEntry(word, defi, defiFormat="m")
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		yield from self._iterOneDirection("term1", "term2")
 		yield from self._iterOneDirection("term2", "term1")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

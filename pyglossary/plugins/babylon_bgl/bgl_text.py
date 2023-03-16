@@ -21,9 +21,9 @@
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
 import re
-from pyglossary.plugins.formats_common import log
-from pyglossary.xml_utils import xml_escape
 
+from pyglossary.core import log
+from pyglossary.xml_utils import xml_escape
 
 u_pat_html_entry = re.compile("(?:&#x|&#|&)(\\w+);?", re.I)
 u_pat_html_entry_key = re.compile("(?:&#x|&#|&)(\\w+);", re.I)
@@ -36,7 +36,7 @@ u_pat_newline = re.compile("[\r\n]+")
 unknownHtmlEntries = set()
 
 
-def replaceHtmlEntryNoEscapeCB(u_match):
+def replaceHtmlEntryNoEscapeCB(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
 	Replace character entity with the corresponding character
@@ -49,9 +49,8 @@ def replaceHtmlEntryNoEscapeCB(u_match):
 	u_text = u_match.group(0)
 	u_name = u_match.group(1)
 	if log.isDebug():
-		assert isinstance(u_text, str) and isinstance(u_name, str)
+		assert isinstance(u_text, str) and isinstance(u_name, str)  # noqa: S101
 
-	u_res = None
 	if u_text[:2] == "&#":
 		# character reference
 		try:
@@ -61,9 +60,9 @@ def replaceHtmlEntryNoEscapeCB(u_match):
 				code = int(u_name)
 			if code <= 0:
 				raise ValueError()
-			u_res = chr(code)
+			return chr(code)
 		except (ValueError, OverflowError):
-			u_res = chr(0xFFFD)  # replacement character
+			return chr(0xFFFD)  # replacement character
 	elif u_text[0] == "&":
 		"""
 		Babylon dictionaries contain a lot of non-standard entity,
@@ -78,16 +77,15 @@ def replaceHtmlEntryNoEscapeCB(u_match):
 		"""
 		# named entity
 		try:
-			u_res = chr(name2codepoint[u_name.lower()])
+			return chr(name2codepoint[u_name.lower()])
 		except KeyError:
 			unknownHtmlEntries.add(u_text)
-			u_res = u_text
-	else:
-		raise ArgumentError()
-	return u_res
+			return u_text
+
+	raise ValueError(f"{u_text[0] =}")
 
 
-def replaceHtmlEntryCB(u_match):
+def replaceHtmlEntryCB(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
 	Same as replaceHtmlEntryNoEscapeCB, but escapes result string
@@ -97,12 +95,11 @@ def replaceHtmlEntryCB(u_match):
 	u_res = replaceHtmlEntryNoEscapeCB(u_match)
 	if u_match.group(0) == u_res:  # conversion failed
 		return u_res
-	else:
-		# FIXME: should " and ' be escaped?
-		return xml_escape(u_res, quotation=False)
+	# FIXME: should " and ' be escaped?
+	return xml_escape(u_res, quotation=False)
 
 
-def replaceDingbat(u_match):
+def replaceDingbat(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
 	replace chars \\u008c-\\u0095 with \\u2776-\\u277f
@@ -112,7 +109,7 @@ def replaceDingbat(u_match):
 	return chr(code)
 
 
-def escapeNewlinesCallback(u_match):
+def escapeNewlinesCallback(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
 	"""
@@ -126,92 +123,92 @@ def escapeNewlinesCallback(u_match):
 	return ch
 
 
-def replaceHtmlEntries(u_text):
+def replaceHtmlEntries(u_text: str) -> str:
 	# &ldash;
 	# &#0147;
 	# &#x010b;
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_html_entry.sub(
 		replaceHtmlEntryCB,
 		u_text,
 	)
 
 
-def replaceHtmlEntriesInKeys(u_text):
+def replaceHtmlEntriesInKeys(u_text: str) -> str:
 	# &ldash;
 	# &#0147;
 	# &#x010b;
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_html_entry_key.sub(
 		replaceHtmlEntryNoEscapeCB,
 		u_text,
 	)
 
 
-def escapeNewlines(u_text):
+def escapeNewlines(u_text: str) -> str:
 	r"""
 	convert text to c-escaped string:
 	\ -> \\
 	new line -> \n or \r
 	"""
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_newline_escape.sub(
 		escapeNewlinesCallback,
 		u_text,
 	)
 
 
-def stripHtmlTags(u_text):
+def stripHtmlTags(u_text: str) -> str:
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_strip_tags.sub(
 		" ",
 		u_text,
 	)
 
 
-def removeControlChars(u_text):
+def removeControlChars(u_text: str) -> str:
 	# \x09 - tab
 	# \x0a - line feed
 	# \x0b - vertical tab
 	# \x0d - carriage return
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_control_chars.sub(
 		"",
 		u_text,
 	)
 
 
-def removeNewlines(u_text):
+def removeNewlines(u_text: str) -> str:
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_newline.sub(
 		" ",
 		u_text,
 	)
 
 
-def normalizeNewlines(u_text):
+def normalizeNewlines(u_text: str) -> str:
 	"""
 	convert new lines to unix style and remove consecutive new lines
 	"""
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_pat_newline.sub(
 		"\n",
 		u_text,
 	)
 
 
-def replaceAsciiCharRefs(b_text, encoding):
+def replaceAsciiCharRefs(b_text: bytes, encoding: str) -> bytes:
 	# &#0147;
 	# &#x010b;
 	if log.isDebug():
-		assert isinstance(b_text, bytes)
+		assert isinstance(b_text, bytes)  # noqa: S101
 	b_parts = b_pat_ascii_char_ref.split(b_text)
 	for i_part, b_part in enumerate(b_parts):
 		if i_part % 2 != 1:
@@ -233,7 +230,7 @@ def replaceAsciiCharRefs(b_text, encoding):
 	return b"".join(b_parts)
 
 
-def fixImgLinks(u_text):
+def fixImgLinks(u_text: str) -> str:
 	"""
 	Fix img tag links
 
@@ -248,13 +245,13 @@ def fixImgLinks(u_text):
 	safely remove all of them, irrespective of context.
 	"""
 	if log.isDebug():
-		assert isinstance(u_text, str)
+		assert isinstance(u_text, str)  # noqa: S101
 	return u_text.replace("\x1e", "").replace("\x1f", "")
 
 
-def stripDollarIndexes(b_word):
+def stripDollarIndexes(b_word: bytes) -> "tuple[bytes, int]":
 	if log.isDebug():
-		assert isinstance(b_word, bytes)
+		assert isinstance(b_word, bytes)  # noqa: S101
 	i = 0
 	b_word_main = b""
 	strip_count = 0  # number of sequences found
@@ -311,8 +308,8 @@ def stripDollarIndexes(b_word):
 		Ihre$1$Ihres
 			"""
 			log.debug(
-				f"stripDollarIndexes({b_word}):\n"
-				f"second $ is followed by non-space"
+				f"stripDollarIndexes({b_word!r}):\n"
+				f"second $ is followed by non-space",
 			)
 			pass
 		b_word_main += b_word[i:d0]

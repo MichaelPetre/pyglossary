@@ -1,12 +1,33 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import re
+import typing
+from io import BytesIO, IOBase
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+	from typing import Any, Callable, Iterator
+
+	from lxml.etree import _Element as Element
+
+	from pyglossary.lxml_types import T_htmlfile
+
+
+from pyglossary.compression import (
+	compressionOpen,
+	stdCompressions,
+)
+from pyglossary.core import log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.html_utils import unescape_unicode
 from pyglossary.langs import langDict
 from pyglossary.langs.writing_system import getWritingSystemFromText
-from io import BytesIO
-import re
-import html
+from pyglossary.option import (
+	BoolOption,
+	IntOption,
+	Option,
+	StrOption,
+)
 
 enable = True
 lname = "freedict"
@@ -21,7 +42,7 @@ website = (
 	"https://freedict.org/",
 	"FreeDict.org",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"resources": BoolOption(
 		comment="Enable resources / data files",
 	),
@@ -56,7 +77,7 @@ class Reader(object):
 	}
 
 	_discover: bool = False
-	_auto_rtl: "Optional[bool]" = None
+	_auto_rtl: "bool | None" = None
 	_word_title: bool = False
 	_pron_color: str = "gray"
 	_gram_color: str = "green"
@@ -116,15 +137,15 @@ class Reader(object):
 	}
 
 	def makeList(
-		self,
-		hf: "lxml.etree.htmlfile",
-		input_objects: "List[Any]",
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		input_objects: "list[Any]",
 		processor: "Callable",
-		single_prefix="",
-		skip_single=True,
-		ordered=True,
-		list_type="",
-	):
+		single_prefix: str = "",
+		skip_single: bool = True,
+		ordered: bool = True,
+		list_type: str = "",
+	) -> None:
 		""" Wrap elements into <ol> if more than one element """
 
 		if not input_objects:
@@ -136,57 +157,55 @@ class Reader(object):
 			processor(hf, input_objects[0])
 			return
 
-		kw = {}
+		attrib: "dict[str, str]" = {}
 		if list_type:
-			kw["type"] = list_type
+			attrib["type"] = list_type
 
-		with hf.element("ol" if ordered else "ul", **kw):
+		with hf.element("ol" if ordered else "ul", attrib=attrib):
 			for el in input_objects:
 				with hf.element("li"):
 					processor(hf, el)
 
-	def getTitleTag(self, sample: str) -> str:
+	def getTitleTag(self: "typing.Self", sample: str) -> str:
 		ws = getWritingSystemFromText(sample)
 		if ws:
 			return ws.titleTag
 		return "b"
 
 	def writeRef(
-		self,
-		hf: "lxml.etree.htmlfile",
-		ref: "lxml.etree.Element",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		ref: "Element",
+	) -> None:
 		target = ref.get("target")
-		attrib = {}
+		attrib: "dict[str, str]" = {}
 		if target:
 			if "://" in target:
 				attrib["class"] = "external"
 		else:
 			target = f"bword://{ref.text}"
-		with hf.element("a", href=target, **attrib):
-			hf.write(ref.text)
+		with hf.element("a", href=target, attrib=attrib):
+			hf.write(ref.text or "")
 
 	def writeQuote(
-		self,
-		hf: "lxml.etree.htmlfile",
-		elem: "lxml.etree.Element",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		elem: "Element",
+	) -> None:
 		self.writeWithDirection(hf, elem, "div")
 
 	def writeTransCit(
-		self,
-		hf: "lxml.etree.htmlfile",
-		elem: "lxml.etree.Element",
-	):
-		from lxml import etree as ET
-
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		elem: "Element",
+	) -> None:
 		quotes = []
 		for child in elem.xpath("child::node()"):
 			if isinstance(child, str):
 				child = child.strip()
 				if child:
 					hf.write(child)
-					log.warning(f"text directly inside <cit>")
+					log.warning("text directly inside <cit>")
 				continue
 
 			if child.__class__.__name__ == "_Comment":
@@ -195,7 +214,7 @@ class Reader(object):
 			if child.tag != f"{tei}quote":
 				log.warning(
 					f"unknown tag {child.tag!r} inside translation <cit>"
-					f": {self.tostring(child)}"
+					f": {self.tostring(child)}",
 				)
 				continue
 
@@ -209,18 +228,16 @@ class Reader(object):
 		)
 
 	def writeDef(
-		self,
-		hf: "lxml.etree.htmlfile",
-		elem: "lxml.etree.Element",
-	):
-		from lxml import etree as ET
-
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		elem: "Element",
+	) -> None:
 		sep = ", "  # TODO: self.getCommaSep(sample)
 		# if self._cif_newline:
 		# 	sep = ET.Element("br")
 		count = 0
 
-		def writeChild(item, depth):
+		def writeChild(item: "str | Element", depth: int) -> None:
 			nonlocal count
 			if isinstance(item, str):
 				item = item.strip()
@@ -246,8 +263,13 @@ class Reader(object):
 		for child in elem.xpath("child::node()"):
 			writeChild(child, 0)
 
-	def writeWithDirection(self, hf, child, tag):
-		attrib = child.attrib
+	def writeWithDirection(
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		child: "Element",
+		tag: str,
+	) -> None:
+		attrib = dict(child.attrib)
 		try:
 			lang = attrib.pop(self.xmlLang)
 		except KeyError:
@@ -268,14 +290,14 @@ class Reader(object):
 		else:
 			if _type not in ("trans",):
 				attrib["class"] = _type
-		with hf.element(tag, **attrib):
+		with hf.element(tag, attrib=attrib):
 			self.writeRichText(hf, child)
 
 	def writeRichText(
-		self,
-		hf: "lxml.etree.htmlfile",
-		el: "lxml.etree.Element",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		el: "Element",
+	) -> None:
 		from lxml import etree as ET
 		for child in el.xpath("child::node()"):
 			if isinstance(child, str):
@@ -300,13 +322,13 @@ class Reader(object):
 
 			self.writeRichText(hf, child)
 
-	def getLangDesc(self, elem):
+	def getLangDesc(self: "typing.Self", elem: "Element") -> "str | None":
 		lang = elem.attrib.get(self.xmlLang)
 		if lang:
 			langObj = langDict[lang]
 			if not langObj:
 				log.warning(f"unknown lang {lang!r} in {self.tostring(elem)}")
-				return
+				return None
 			return langObj.name
 
 		orig = elem.attrib.get("orig")
@@ -314,8 +336,13 @@ class Reader(object):
 			return orig
 
 		log.warning(f"unknown lang name in {self.tostring(elem)}")
+		return None
 
-	def writeLangTag(self, hf, elem):
+	def writeLangTag(
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		elem: "Element",
+	) -> None:
 		langDesc = self.getLangDesc(elem)
 		if not langDesc:
 			return
@@ -325,15 +352,18 @@ class Reader(object):
 		else:
 			hf.write(f"{langDesc}")
 
-	def writeNote(self, hf, note):
+	def writeNote(
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		note: "Element",
+	) -> None:
 		self.writeRichText(hf, note)
 
 	def writeSenseSense(
-		self,
-		hf: "lxml.etree.htmlfile",
-		sense: "lxml.etree.Element",
-	):
-		from lxml import etree as ET
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		sense: "Element",
+	) -> int:
 		# this <sense> element can be 1st-level (directly under <entry>)
 		# or 2nd-level
 		transCits = []
@@ -407,10 +437,11 @@ class Reader(object):
 		if gramList:
 			with hf.element("div"):
 				for i, gram in enumerate(gramList):
+					text = gram.text or ""
 					if i > 0:
-						hf.write(self.getCommaSep(gram.text))
+						hf.write(self.getCommaSep(text))
 					with hf.element("font", color=self._gram_color):
-						hf.write(gram.text)
+						hf.write(text)
 		self.makeList(
 			hf,
 			noteList,
@@ -438,12 +469,13 @@ class Reader(object):
 			with hf.element("div"):
 				hf.write("Usage: ")
 				for i, usg in enumerate(usgList):
+					text = usg.text or ""
 					if i > 0:
-						hf.write(self.getCommaSep(usg.text))
-					hf.write(usg.text)
+						hf.write(self.getCommaSep(text))
+					hf.write(text)
 		if exampleCits:
 			for cit in exampleCits:
-				with hf.element("div", **{
+				with hf.element("div", attrib={
 					"class": "example",
 					"style": f"padding: {self._example_padding}px 0px;",
 				}):
@@ -456,7 +488,7 @@ class Reader(object):
 
 		return len(transCits) + len(exampleCits)
 
-	def getCommaSep(self, sample: str):
+	def getCommaSep(self: "typing.Self", sample: str) -> str:
 		if self._auto_rtl:
 			ws = getWritingSystemFromText(sample)
 			if ws:
@@ -464,10 +496,10 @@ class Reader(object):
 		return ", "
 
 	def writeGramGroups(
-		self,
-		hf: "lxml.etree.htmlfile",
-		gramGrpList: "List[lxml.etree.htmlfile]",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		gramGrpList: "list[Element]",
+	) -> None:
 		from lxml import etree as ET
 
 		color = self._gram_color
@@ -488,17 +520,17 @@ class Reader(object):
 			hf.write(ET.Element("br"))
 
 	def writeSenseGrams(
-		self,
-		hf: "lxml.etree.htmlfile",
-		sense: "lxml.etree.Element",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		sense: "Element",
+	) -> None:
 		self.writeGramGroups(hf, sense.findall("gramGrp", self.ns))
 
 	def writeSense(
-		self,
-		hf: "lxml.etree.htmlfile",
-		sense: "lxml.etree.Element",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		sense: "Element",
+	) -> None:
 		# this <sense> element is 1st-level (directly under <entry>)
 		self.writeSenseGrams(hf, sense)
 		self.makeList(
@@ -509,7 +541,7 @@ class Reader(object):
 		)
 		self.writeSenseSense(hf, sense)
 
-	def getDirection(self, elem: "lxml.etree.Element"):
+	def getDirection(self: "typing.Self", elem: "Element") -> str:
 		lang = elem.get(self.xmlLang)
 		if lang is None:
 			return ""
@@ -522,10 +554,10 @@ class Reader(object):
 		return ""
 
 	def writeSenseList(
-		self,
-		hf: "lxml.etree.htmlfile",
-		senseList: "List[lxml.etree.Element]",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		senseList: "list[Element]",
+	) -> None:
 		# these <sense> elements are 1st-level (directly under <entry>)
 		if not senseList:
 			return
@@ -545,10 +577,13 @@ class Reader(object):
 			# list_type="A",
 		)
 
-	def normalizeGramGrpChild(self, elem) -> str:
+	def normalizeGramGrpChild(self: "typing.Self", elem: "Element") -> str:
 		# child can be "pos" or "gen"
 		tag = elem.tag
-		text = elem.text.strip()
+		text = elem.text
+		if not text:
+			return ""
+		text = text.strip()
 		if tag == f"{tei}pos":
 			return self.posMapping.get(text.lower(), text)
 		if tag == f"{tei}gen":
@@ -570,15 +605,20 @@ class Reader(object):
 					return self.subcMapping.get(text.lower(), text)
 				log.warning(f"unrecognize type={_type!r}: {self.tostring(elem)}")
 				return text
-			else:
-				log.warning(f"<gram> with no type: {self.tostring(elem)}")
-				return text
+
+			log.warning(f"<gram> with no type: {self.tostring(elem)}")
+			return text
+
 		if tag == f"{tei}note":
 			return text
 		log.warning(f"unrecognize GramGrp child tag: {self.tostring(elem)}")
 		return ""
 
-	def getEntryByElem(self, entry: "lxml.etree.Element") -> "BaseEntry":
+	def getEntryByElem(
+		self: "typing.Self",
+		entry:
+		"Element",
+	) -> "EntryType":
 		from lxml import etree as ET
 		glos = self._glos
 		keywords = []
@@ -590,7 +630,7 @@ class Reader(object):
 				if elem.tag not in self.supportedTags:
 					self._discoveredTags[elem.tag] = elem
 
-		def br():
+		def br() -> "Element":
 			return ET.Element("br")
 
 		inflectedKeywords = []
@@ -618,7 +658,7 @@ class Reader(object):
 			with hf.element("div"):
 				if self._word_title:
 					for keyword in keywords:
-						with glos.titleElement(hf, keyword):
+						with hf.element(glos.titleTag(keyword)):
 							hf.write(keyword)
 						hf.write(br())
 
@@ -638,28 +678,31 @@ class Reader(object):
 					hf.write(br())
 					hf.write("\n")
 
-				self.writeGramGroups(hf, entry.findall("gramGrp", self.ns))
-
-				self.writeSenseList(hf, senseList)
+				_hf = cast("T_htmlfile", hf)
+				self.writeGramGroups(_hf, entry.findall("gramGrp", self.ns))
+				self.writeSenseList(_hf, senseList)
 
 		defi = f.getvalue().decode("utf-8")
 		# defi = defi.replace("\xa0", "&nbsp;")  # do we need to do this?
+		_file = self._file
+		if _file is None:
+			raise RuntimeError("_file is None")
 		return self._glos.newEntry(
 			keywords,
 			defi,
 			defiFormat="h",
-			byteProgress=(self._file.tell(), self._fileSize),
+			byteProgress=(_file.tell(), self._fileSize),
 		)
 
-	def setWordCount(self, header):
+	def setWordCount(self: "typing.Self", header: "Element") -> None:
 		extent_elem = header.find(".//extent", self.ns)
 		if extent_elem is None:
 			log.warning(
 				"did not find 'extent' tag in metedata"
-				", progress bar will not word"
+				", progress bar will not word",
 			)
 			return
-		extent = extent_elem.text
+		extent = extent_elem.text or ""
 		if not extent.endswith(" headwords"):
 			log.warning(f"unexpected {extent=}")
 			return
@@ -668,7 +711,7 @@ class Reader(object):
 		except Exception:
 			log.exception(f"unexpected {extent=}")
 
-	def tostring(self, elem: "lxml.etree.Element") -> str:
+	def tostring(self: "typing.Self", elem: "Element") -> str:
 		from lxml import etree as ET
 		return ET.tostring(
 			elem,
@@ -676,12 +719,15 @@ class Reader(object):
 			pretty_print=True,
 		).decode("utf-8").strip()
 
-	def stripParag(self, elem: "lxml.etree.Element") -> str:
+	def stripParag(self: "typing.Self", elem: "Element") -> str:
 		text = self.tostring(elem)
 		text = self._p_pattern.sub("\\2", text)
-		return text
+		return text  # noqa: RET504
 
-	def stripParagList(self, elems: "List[lxml.etree.Element]") -> str:
+	def stripParagList(
+		self: "typing.Self",
+		elems: "list[Element]",
+	) -> str:
 		lines = []
 		for elem in elems:
 			for line in self.stripParag(elem).split("\n"):
@@ -691,10 +737,10 @@ class Reader(object):
 				lines.append(line)
 		return "\n".join(lines)
 
-	def setGlosInfo(self, key: str, value: str) -> None:
+	def setGlosInfo(self: "typing.Self", key: str, value: str) -> None:
 		self._glos.setInfo(key, unescape_unicode(value))
 
-	def setCopyright(self, header):
+	def setCopyright(self: "typing.Self", header: "Element") -> None:
 		elems = header.findall(".//availability//p", self.ns)
 		if not elems:
 			log.warning("did not find copyright")
@@ -704,24 +750,23 @@ class Reader(object):
 		self.setGlosInfo("copyright", copyright)
 		log.debug(f"Copyright: {copyright!r}")
 
-	def setPublisher(self, header):
+	def setPublisher(self: "typing.Self", header: "Element") -> None:
 		elem = header.find(".//publisher", self.ns)
 		if elem is None or not elem.text:
 			log.warning("did not find publisher")
 			return
 		self.setGlosInfo("publisher", elem.text)
 
-	def setCreationTime(self, header):
+	def setCreationTime(self: "typing.Self", header: "Element") -> None:
 		elem = header.find(".//publicationStmt/date", self.ns)
 		if elem is None or not elem.text:
 			return
 		self.setGlosInfo("creationTime", elem.text)
 
-	def replaceRefLink(self, text: str) -> str:
-		text = self._ref_pattern.sub('<a href="\\1">\\2</a>', text)
-		return text
+	def replaceRefLink(self: "typing.Self", text: str) -> str:
+		return self._ref_pattern.sub('<a href="\\1">\\2</a>', text)
 
-	def setDescription(self, header):
+	def setDescription(self: "typing.Self", header: "Element") -> None:
 		elems = []
 		for tag in ("sourceDesc", "projectDesc"):
 			elems += header.findall(f".//{tag}//p", self.ns)
@@ -745,12 +790,14 @@ class Reader(object):
 		log.debug(
 			"------------ Description: ------------\n"
 			f"{desc}\n"
-			"--------------------------------------"
+			"--------------------------------------",
 		)
 
-	def setMetadata(self, header):
+	def setMetadata(self: "typing.Self", header: "Element") -> None:
 		self.setWordCount(header)
-		self.setGlosInfo("name", header.find(".//title", self.ns).text)
+		title = header.find(".//title", self.ns)
+		if title is not None and title.text:
+			self.setGlosInfo("name", title.text)
 
 		edition = header.find(".//edition", self.ns)
 		if edition is not None and edition.text:
@@ -761,13 +808,13 @@ class Reader(object):
 		self.setCreationTime(header)
 		self.setDescription(header)
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
-		self._file = None
+		self._file: "IOBase | None" = None
 		self._fileSize = 0
 		self._wordCount = 0
-		self._discoveredTags = dict()
+		self._discoveredTags: "dict[str, Element]" = {}
 
 		self._p_pattern = re.compile(
 			'<p( [^<>]*?)?>(.*?)</p>',
@@ -780,10 +827,10 @@ class Reader(object):
 			'Home: <(ref|ptr) target="(.*)">(.*)</\\1>',
 		)
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		return self._wordCount
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		if self._file:
 			self._file.close()
 			self._file = None
@@ -791,9 +838,9 @@ class Reader(object):
 		self._fileSize = 0
 
 	def open(
-		self,
+		self: "typing.Self",
 		filename: str,
-	):
+	) -> None:
 		try:
 			from lxml import etree as ET
 		except ModuleNotFoundError as e:
@@ -816,18 +863,18 @@ class Reader(object):
 		if self._word_title:
 			self._glos.setInfo("definition_has_headwords", "True")
 
-		context = ET.iterparse(
+		context = ET.iterparse(  # type: ignore # noqa: PGH003
 			cfile,
 			events=("end",),
 			tag=f"{tei}teiHeader",
 		)
-		for action, elem in context:
+		for _, elem in context:
 			self.setMetadata(elem)
 			break
 
 		cfile.close()
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		from lxml import etree as ET
 
 		if self._auto_rtl is None:
@@ -840,12 +887,12 @@ class Reader(object):
 				self._auto_rtl = True
 
 		self._file = compressionOpen(self._filename, mode="rb")
-		context = ET.iterparse(
+		context = ET.iterparse(  # type: ignore # noqa: PGH003
 			self._file,
 			events=("end",),
 			tag=f"{tei}entry",
 		)
-		for action, elem in context:
+		for _, elem in context:
 			yield self.getEntryByElem(elem)
 			# clean up preceding siblings to save memory
 			# this reduces memory usage from ~64 MB to ~30 MB
@@ -854,5 +901,5 @@ class Reader(object):
 
 		if self._discoveredTags:
 			log.info("Found unsupported tags")
-			for tag, elem in self._discoveredTags.items():
+			for _, elem in self._discoveredTags.items():
 				log.info(f"{self.tostring(elem)}\n")

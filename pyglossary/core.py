@@ -1,19 +1,34 @@
-import logging
-import traceback
 import inspect
-import sys
+import logging
 import os
-from os.path import (
-	join,
-	isfile,
-	isdir,
-	exists,
-	realpath,
-	dirname,
-)
 import platform
+import sys
+import traceback
+import typing
+from os.path import (
+	abspath,
+	dirname,
+	exists,
+	isdir,
+	isfile,
+	join,
+)
+from types import TracebackType
+from typing import TYPE_CHECKING, cast
 
-VERSION = "4.5.0"
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		Callable,
+		TypeAlias,
+	)
+	ExcInfoType: TypeAlias = (
+		"tuple[type[BaseException], BaseException, TracebackType]"
+		" | tuple[None, None, None]"
+	)
+
+
+VERSION = "4.6.1"
 
 homePage = "https://github.com/ilius/pyglossary"
 
@@ -23,16 +38,20 @@ logging.addLevelName(TRACE, "TRACE")
 noColor = False
 
 
-class Formatter(logging.Formatter):
-	def __init__(self, *args, **kwargs):
-		logging.Formatter.__init__(self, *args, **kwargs)
-		self.fill = None  # type: Optional[Callable[[str], str]]
 
-	def formatMessage(self, record):
+class Formatter(logging.Formatter):
+	def __init__(self: "typing.Self", *args, **kwargs) -> None:  # noqa: ANN
+		logging.Formatter.__init__(self, *args, **kwargs)
+		self.fill: "Callable[[str], str] | None" = None
+
+	def formatMessage(
+		self: "typing.Self",
+		record: "logging.LogRecord",
+	) -> str:
 		msg = logging.Formatter.formatMessage(self, record)
 		if self.fill is not None:
 			msg = self.fill(msg)
-		return msg
+		return msg  # noqa: RET504
 
 
 class MyLogger(logging.Logger):
@@ -55,29 +74,29 @@ class MyLogger(logging.Logger):
 		"All",  # "Not-Set",
 	]
 
-	def __init__(self, *args):
+	def __init__(self: "typing.Self", *args) -> None:  # noqa: ANN
 		logging.Logger.__init__(self, *args)
 		self._verbosity = 3
 		self._timeEnable = False
 
-	def setVerbosity(self, verbosity: int) -> None:
+	def setVerbosity(self: "typing.Self", verbosity: int) -> None:
 		self.setLevel(self.levelsByVerbosity[verbosity])
 		self._verbosity = verbosity
 
-	def getVerbosity(self) -> int:
+	def getVerbosity(self: "typing.Self") -> int:
 		return self._verbosity
 
-	def trace(self, msg: str):
+	def trace(self: "typing.Self", msg: str) -> None:
 		self.log(TRACE, msg)
 
-	def pretty(self, data: "Any", header: str = "") -> None:
+	def pretty(self: "typing.Self", data: "Any", header: str = "") -> None:
 		from pprint import pformat
 		self.debug(header + pformat(data))
 
-	def isDebug(self) -> bool:
+	def isDebug(self: "typing.Self") -> bool:
 		return self.getVerbosity() >= 4
 
-	def newFormatter(self):
+	def newFormatter(self: "typing.Self") -> Formatter:
 		timeEnable = self._timeEnable
 		if timeEnable:
 			fmt = "%(asctime)s [%(levelname)s] %(message)s"
@@ -85,13 +104,13 @@ class MyLogger(logging.Logger):
 			fmt = "[%(levelname)s] %(message)s"
 		return Formatter(fmt)
 
-	def setTimeEnable(self, timeEnable: bool):
+	def setTimeEnable(self: "typing.Self", timeEnable: bool) -> None:
 		self._timeEnable = timeEnable
 		formatter = self.newFormatter()
 		for handler in self.handlers:
 			handler.setFormatter(formatter)
 
-	def addHandler(self, handler: "logging.Handler"):
+	def addHandler(self: "typing.Self", handler: "logging.Handler") -> None:
 		# if want to add separate format (new config keys and flags) for ui_gtk
 		# and ui_tk, you need to remove this function and run handler.setFormatter
 		# in ui_gtk and ui_tk
@@ -100,7 +119,7 @@ class MyLogger(logging.Logger):
 
 
 def formatVarDict(
-	dct: "Dict[str, Any]",
+	dct: "dict[str, Any]",
 	indent: int = 4,
 	max_width: int = 80,
 ) -> str:
@@ -121,14 +140,17 @@ def formatVarDict(
 
 
 def format_exception(
-	exc_info: "Optional[Tuple[Type, Exception, types.TracebackType]]" = None,
+	exc_info: "ExcInfoType | None" = None,
 	add_locals: bool = False,
 	add_globals: bool = False,
 ) -> str:
-	if not exc_info:
+	if exc_info is None:
 		exc_info = sys.exc_info()
 	_type, value, tback = exc_info
 	text = "".join(traceback.format_exception(_type, value, tback))
+
+	if tback is None:
+		return text
 
 	if add_locals or add_globals:
 		try:
@@ -153,35 +175,35 @@ class StdLogHandler(logging.Handler):
 	# 1: dark red (like 31m), 196: real red, 9: light red
 	# 15: white, 229: light yellow (#ffffaf), 226: real yellow (#ffff00)
 
-	def __init__(self, noColor: bool = False):
+	def __init__(self: "typing.Self", noColor: bool = False) -> None:
 		logging.Handler.__init__(self)
 		self.set_name("std")
 		self.noColor = noColor
-		self.config = {}
+		self.config: "dict[str, Any]" = {}
 
 	@property
-	def endFormat(self):
+	def endFormat(self: "typing.Self") -> str:
 		if self.noColor:
 			return ""
 		return "\x1b[0;0;0m"
 
-	def emit(self, record: logging.LogRecord) -> None:
+	def emit(self: "typing.Self", record: logging.LogRecord) -> None:
 		msg = ""
 		if record.getMessage():
 			msg = self.format(record)
 		###
 		if record.exc_info:
 			_type, value, tback = record.exc_info
-			tback_text = format_exception(
-				exc_info=record.exc_info,
-				add_locals=(log.level <= logging.DEBUG),
-				add_globals=False,
-			)
-
-			if not msg:
-				msg = "unhandled exception:"
-			msg += "\n"
-			msg += tback_text
+			if _type and tback and value:  # to fix mypy error
+				tback_text = format_exception(
+					exc_info=(_type, value, tback),
+					add_locals=(log.level <= logging.DEBUG),
+					add_globals=False,
+				)
+				if not msg:
+					msg = "unhandled exception:"
+				msg += "\n"
+				msg += tback_text
 		###
 		levelname = record.levelname
 
@@ -220,8 +242,7 @@ def checkCreateConfDir() -> None:
 			usrF.write(srcF.read())
 
 
-
-def in_virtualenv():
+def in_virtualenv() -> bool:
 	if hasattr(sys, 'real_prefix'):
 		return True
 	if hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix:
@@ -229,9 +250,9 @@ def in_virtualenv():
 	return False
 
 
-def getDataDir():
+def getDataDir() -> str:
 	if in_virtualenv():
-		pass # TODO
+		pass  # TODO
 		# print(f"prefix={sys.prefix}, base_prefix={sys.base_prefix}")
 		# return join(
 		# 	dirname(dirname(dirname(rootDir))),
@@ -266,41 +287,53 @@ def getDataDir():
 	if isdir(_dir):
 		return _dir
 
-	if os.getenv("CONDA_PREFIX"):
-		_dir = join(os.getenv("CONDA_PREFIX"), "share", "pyglossary")
+	if (CONDA_PREFIX := os.getenv("CONDA_PREFIX")):
+		_dir = join(CONDA_PREFIX, "share", "pyglossary")
 		if isdir(_dir):
 			return _dir
 
 	raise OSError("failed to detect dataDir")
 
-
-def windows_show_exception(*exc_info):
-	import ctypes
-	msg = format_exception(
-		exc_info=exc_info,
-		add_locals=(log.level <= logging.DEBUG),
-		add_globals=False,
-	)
-	log.critical(msg)
-	ctypes.windll.user32.MessageBoxW(0, msg, "PyGlossary Error", 0)
-
 # __________________________________________________________________________ #
 
 
 logging.setLoggerClass(MyLogger)
-log = logging.getLogger("pyglossary")
+log = cast(MyLogger, logging.getLogger("pyglossary"))
 
 if os.sep == "\\":
-	sys.excepthook = windows_show_exception
-else:
-	sys.excepthook = lambda *exc_info: log.critical(
-		format_exception(
-			exc_info=exc_info,
+	def windows_show_exception(
+		_type: "type[BaseException]",
+		exc: "BaseException",
+		tback: "TracebackType | None",
+	) -> None:
+		if not (_type and exc and tback):
+			return
+		import ctypes
+		msg = format_exception(
+			exc_info=(_type, exc, tback),
 			add_locals=(log.level <= logging.DEBUG),
 			add_globals=False,
 		)
-	)
+		log.critical(msg)
+		ctypes.windll.user32.MessageBoxW(0, msg, "PyGlossary Error", 0)
 
+	sys.excepthook = windows_show_exception
+
+else:
+	def unix_show_exception(
+		_type: "type[BaseException]",
+		exc: "BaseException",
+		tback: "TracebackType | None",
+	) -> None:
+		if not (_type and exc and tback):
+			return
+		log.critical(format_exception(
+			exc_info=(_type, exc, tback),
+			add_locals=(log.level <= logging.DEBUG),
+			add_globals=False,
+		))
+
+	sys.excepthook = unix_show_exception
 
 sysName = platform.system().lower()
 # platform.system() is in	["Linux", "Windows", "Darwin", "FreeBSD"]
@@ -309,18 +342,21 @@ sysName = platform.system().lower()
 
 # can set env var WARNINGS to:
 # "error", "ignore", "always", "default", "module", "once"
-if os.getenv("WARNINGS"):
-	import warnings
-	warnings.filterwarnings(os.getenv("WARNINGS"))
+if (WARNINGS := os.getenv("WARNINGS")):
+	if WARNINGS in ('default', 'error', 'ignore', 'always', 'module', 'once'):
+		import warnings
+		warnings.filterwarnings(WARNINGS)  # type: ignore # noqa: PGH003
+	else:
+		log.error(f"invalid env var {WARNINGS = }")
 
 
 if getattr(sys, "frozen", False):
 	# PyInstaller frozen executable
-	log.info(f"{sys.frozen = }")
+	log.info(f"sys.frozen = {getattr(sys, 'frozen', False)}")
 	rootDir = dirname(sys.executable)
 	uiDir = join(rootDir, "pyglossary", "ui")
 else:
-	_srcDir = dirname(realpath(__file__))
+	_srcDir = dirname(abspath(__file__))
 	uiDir = join(_srcDir, "ui")
 	rootDir = dirname(_srcDir)
 
@@ -328,9 +364,11 @@ dataDir = getDataDir()
 appResDir = join(dataDir, "res")
 
 if os.sep == "/":  # Operating system is Unix-Like
-	homeDir = os.getenv("HOME")
+	homeDir = os.getenv("HOME", "/")
 	user = os.getenv("USER")
-	tmpDir = os.getenv("TMPDIR", "/tmp")
+	if user is None:
+		raise OSError("no $USER")
+	tmpDir = os.getenv("TMPDIR", "/tmp")  # noqa: S108
 	if sysName == "darwin":  # MacOS X
 		_libDir = join(homeDir, "Library")
 		confDir = join(_libDir, "Preferences", "PyGlossary")
@@ -351,10 +389,13 @@ if os.sep == "/":  # Operating system is Unix-Like
 		else:
 			pip = "sudo pip3"
 elif os.sep == "\\":  # Operating system is Windows
-	homeDir = join(os.getenv("HOMEDRIVE"), os.getenv("HOMEPATH"))
-	user = os.getenv("USERNAME")
-	tmpDir = os.getenv("TEMP")
-	_appData = os.getenv("APPDATA")
+	# FIXME: default values
+	_HOMEDRIVE = os.getenv("HOMEDRIVE", "")
+	_HOMEPATH = os.getenv("HOMEPATH", "")
+	homeDir = join(_HOMEDRIVE, _HOMEPATH)
+	user = os.getenv("USERNAME", "")
+	tmpDir = os.getenv("TEMP", "")
+	_appData = os.getenv("APPDATA", "")
 	confDir = join(_appData, "PyGlossary")
 	_localAppData = os.getenv("LOCALAPPDATA")
 	if not _localAppData:
@@ -365,7 +406,7 @@ elif os.sep == "\\":  # Operating system is Windows
 else:
 	raise RuntimeError(
 		f"Unknown path separator(os.sep=={os.sep!r})"
-		f", unknown operating system!"
+		f", unknown operating system!",
 	)
 
 pluginsDir = join(rootDir, "pyglossary", "plugins")

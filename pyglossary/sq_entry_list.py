@@ -17,12 +17,22 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
-from pickle import dumps, loads
-import os
-from os.path import isfile
-from .entry import Entry
-
 import logging
+import os
+import typing
+from os.path import isfile
+from pickle import dumps, loads
+from typing import TYPE_CHECKING
+
+from .glossary_types import EntryListType
+
+if TYPE_CHECKING:
+	from typing import Any, Callable, Iterable, Iterator
+
+	from .glossary_types import EntryType, RawEntryType
+	from .sort_keys import NamedSortKey
+
+
 log = logging.getLogger("pyglossary")
 
 PICKLE_PROTOCOL = 4
@@ -37,26 +47,29 @@ PICKLE_PROTOCOL = 4
 # https://docs.python.org/3/library/pickle.html
 
 
-class SqEntryList(list):
+class SqEntryList(EntryListType):
 	def __init__(
-		self,
-		glos,
+		self: "typing.Self",
+		entryToRaw: "Callable[[EntryType], RawEntryType]",
+		entryFromRaw: "Callable[[RawEntryType], EntryType]",
 		filename: str,
 		create: bool = True,
 		persist: bool = False,
-	):
+	) -> None:
 		"""
 			sqliteSortKey[i] == (name, type, valueFunc)
 
 			persist: do not delete the file when variable is deleted
 		"""
-		from sqlite3 import connect
+		import sqlite3
 
-		self._glos = glos
+		self._entryToRaw = entryToRaw
+		self._entryFromRaw = entryFromRaw
 		self._filename = filename
+
 		self._persist = persist
-		self._con = connect(filename)
-		self._cur = self._con.cursor()
+		self._con: "sqlite3.Connection | None" = sqlite3.connect(filename)
+		self._cur: "sqlite3.Cursor | None" = self._con.cursor()
 
 		if not filename:
 			raise ValueError(f"invalid {filename=}")
@@ -69,73 +82,21 @@ class SqEntryList(list):
 		self._sqliteSortKey = None
 		self._columnNames = ""
 
-	def _getLocaleSortKey(
-		self,
-		namedSortKey: "NamedSortKey",
-		sortLocale: str,
-		writeOptions: "Dict[str, Any]",
-	) -> "sqliteSortKeyType":
-		from icu import Locale, Collator
+	@property
+	def rawEntryCompress(self: "typing.Self") -> bool:
+		return False
 
-		if namedSortKey.sqlite_locale is None:
-			raise ValueError(
-				f"locale-sorting is not supported "
-				f"for sortKey={namedSortKey.name}"
-			)
-
-		localeObj = Locale(sortLocale)
-		if not localeObj.getISO3Language():
-			raise ValueError(f"invalid locale {sortLocale!r}")
-
-		log.info(f"Sorting based on locale {localeObj.getName()}")
-
-		collator = Collator.createInstance(localeObj)
-
-		return namedSortKey.sqlite_locale(collator, **writeOptions)
-
-	def _applySortScript(
-		self,
-		sqliteSortKey: "sqliteSortKeyType",
-		sortScript: "List[str]",
-	) -> "sqliteSortKeyType":
-		from pyglossary.langs.writing_system import (
-			writingSystemByLowercaseName,
-			getWritingSystemFromText,
-		)
-
-		wsNames = []
-		for wsNameInput in sortScript:
-			ws = writingSystemByLowercaseName.get(wsNameInput.lower())
-			if ws is None:
-				log.error(f"invalid script name {wsNameInput!r}")
-				continue
-			wsNames.append(ws.name)
-
-		log.info(f"Sorting based on scripts: {wsNames}")
-
-		def getScriptIndex(words: "List[str]") -> int:
-			ws = getWritingSystemFromText(words[0], True)
-			if ws is None:
-				return -1  # FIXME
-			try:
-				return wsNames.index(ws.name)
-			except ValueError:
-				return len(wsNames)
-
-		return [(
-			"script_index",  # name
-			"INTEGER",  # type,
-			getScriptIndex,  # valueFunc
-		)] + sqliteSortKey
+	@rawEntryCompress.setter
+	def rawEntryCompress(self: "typing.Self", enable: bool) -> None:
+		# just to comply with EntryListType
+		pass
 
 	def setSortKey(
-		self,
+		self: "typing.Self",
 		namedSortKey: "NamedSortKey",
-		sortEncoding: "Optional[str]",
-		sortLocale: "Optional[str]",
-		sortScript: "Optional[List[str]]",
-		writeOptions: "Dict[str, Any]",
-	):
+		sortEncoding: "str | None",
+		writeOptions: "dict[str, Any]",
+	) -> None:
 		"""
 			sqliteSortKey[i] == (name, type, valueFunc)
 		"""
@@ -143,17 +104,11 @@ class SqEntryList(list):
 		if self._sqliteSortKey is not None:
 			raise RuntimeError("Called setSortKey twice")
 
-		if sortLocale:
-			sqliteSortKey = self._getLocaleSortKey(
-				namedSortKey,
-				sortLocale,
-				writeOptions,
-			)
-		else:
-			sqliteSortKey = namedSortKey.sqlite(sortEncoding, **writeOptions)
+		kwargs = writeOptions.copy()
+		if sortEncoding:
+			kwargs["sortEncoding"] = sortEncoding
 
-		if sortScript:
-			sqliteSortKey = self._applySortScript(sqliteSortKey, sortScript)
+		sqliteSortKey = namedSortKey.sqlite(**kwargs)
 
 		self._sqliteSortKey = sqliteSortKey
 		self._columnNames = ",".join([
@@ -169,14 +124,16 @@ class SqEntryList(list):
 			for col in sqliteSortKey
 		] + ["pickle BLOB"])
 		self._con.execute(
-			f"CREATE TABLE data ({colDefs})"
+			f"CREATE TABLE data ({colDefs})",
 		)
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		return self._len
 
-	def append(self, entry):
-		rawEntry = entry.getRaw(self._glos)
+	def append(self: "typing.Self", entry: "EntryType") -> None:
+		if self._sqliteSortKey is None:
+			raise RuntimeError("self._sqliteSortKey is None")
+		rawEntry = self._entryToRaw(entry)
 		self._len += 1
 		colCount = len(self._sqliteSortKey)
 		try:
@@ -199,14 +156,16 @@ class SqEntryList(list):
 		if self._len % 1000 == 0:
 			self._con.commit()
 
-	def __iadd__(self, other):
+	def __iadd__(self: "typing.Self", other: "Iterable") -> "SqEntryList":
 		for item in other:
 			self.append(item)
 		return self
 
-	def sort(self, reverse=False):
+	def sort(self: "typing.Self", reverse: bool = False) -> None:
 		if self._sorted:
 			raise NotImplementedError("can not sort more than once")
+		if self._sqliteSortKey is None:
+			raise RuntimeError("self._sqliteSortKey is None")
 
 		self._reverse = reverse
 		self._sorted = True
@@ -218,11 +177,13 @@ class SqEntryList(list):
 			])
 		self._con.commit()
 		self._con.execute(
-			f"CREATE INDEX sortkey ON data({sortColumnNames});"
+			f"CREATE INDEX sortkey ON data({sortColumnNames});",
 		)
 		self._con.commit()
 
-	def _parseExistingIndex(self) -> bool:
+	def _parseExistingIndex(self: "typing.Self") -> bool:
+		if self._cur is None:
+			return False
 		self._cur.execute("select sql FROM sqlite_master WHERE name='sortkey'")
 		row = self._cur.fetchone()
 		if row is None:
@@ -242,20 +203,18 @@ class SqEntryList(list):
 		self._orderBy = columnNames
 		return True
 
-	def deleteAll(self):
+	def deleteAll(self: "typing.Self") -> None:
 		if self._con is None:
 			return
-		self._con.execute(
-			f"DELETE FROM data;"
-		)
+		self._con.execute("DELETE FROM data;")
 		self._con.commit()
 		self._len = 0
 
-	def clear(self):
+	def clear(self: "typing.Self") -> None:
 		self.close()
 
-	def close(self):
-		if self._con is None:
+	def close(self: "typing.Self") -> None:
+		if self._con is None or self._cur is None:
 			return
 		self._con.commit()
 		self._cur.close()
@@ -263,7 +222,7 @@ class SqEntryList(list):
 		self._con = None
 		self._cur = None
 
-	def __del__(self):
+	def __del__(self: "typing.Self") -> None:
 		try:
 			self.close()
 			if not self._persist and isfile(self._filename):
@@ -271,12 +230,11 @@ class SqEntryList(list):
 		except AttributeError as e:
 			log.error(str(e))
 
-	def __iter__(self):
-		glos = self._glos
+	def __iter__(self: "typing.Self") -> "Iterator":
+		if self._cur is None:
+			return
 		query = f"SELECT pickle FROM data ORDER BY {self._orderBy}"
 		self._cur.execute(query)
+		entryFromRaw = self._entryFromRaw
 		for row in self._cur:
-			yield Entry.fromRaw(
-				glos, loads(row[0]),
-				defaultDefiFormat=glos._defaultDefiFormat,
-			)
+			yield entryFromRaw(loads(row[0]))

@@ -21,9 +21,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from pyglossary.plugins.formats_common import *
-from pyglossary.text_reader import TextGlossaryReader
+import os
+import typing
+from os.path import isdir
+from typing import Generator
+
+from pyglossary.core import log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.image_utils import extractInlineHtmlImages
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
+from pyglossary.text_reader import TextGlossaryReader, nextBlockResultType
 
 enable = True
 lname = "kobo_dictfile"
@@ -39,7 +50,7 @@ website = (
 )
 # https://github.com/pgaskin/dictutil
 
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"extract_inline_images": BoolOption(comment="Extract inline images"),
 }
@@ -62,25 +73,29 @@ class Reader(TextGlossaryReader):
 
 	_extract_inline_images: bool = True
 
-	def __init__(self, glos: "GlossaryType"):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		TextGlossaryReader.__init__(self, glos, hasInfo=False)
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		try:
-			import mistune
+			import mistune  # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install mistune` to install"
 			raise e
 		TextGlossaryReader.open(self, filename)
 		self._glos.setDefaultDefiFormat("h")
 
-	def isInfoWord(self, word):
+	def isInfoWord(self: "typing.Self", word: str) -> bool:
 		return False
 
-	def fixInfoWord(self, word):
+	def fixInfoWord(self: "typing.Self", word: str) -> str:
 		raise NotImplementedError
 
-	def fixDefi(self, defi: str, html: bool) -> str:
+	def fixDefi(
+		self: "typing.Self",
+		defi: str,
+		html: bool,
+	) -> "nextBlockResultType":
 		import mistune
 		defi = defi.replace("\n @", "\n@")\
 			.replace("\n :", "\n:")\
@@ -93,7 +108,7 @@ class Reader(TextGlossaryReader):
 			pass
 		else:
 			defi = mistune.html(defi)
-		images = None
+		images: "list[tuple[str, str]] | None" = None
 		if self._extract_inline_images:
 			defi, images = extractInlineHtmlImages(
 				defi,
@@ -102,7 +117,9 @@ class Reader(TextGlossaryReader):
 			)
 		return defi, images
 
-	def nextBlock(self):
+	def nextBlock(
+		self: "typing.Self",
+	) -> "tuple[list[str], str, list[tuple[str, str]] | None]":
 		if not self._file:
 			raise StopIteration
 		words = []
@@ -144,18 +161,22 @@ class Reader(TextGlossaryReader):
 class Writer(object):
 	_encoding: str = "utf-8"
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def stripFullHtmlError(self: "typing.Self", entry: "EntryType", error: str) -> None:
+		log.error(f"error in stripFullHtml: {error}, words={entry.l_word!r}")
+
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._file = None
+		glos.stripFullHtml(errorHandler=self.stripFullHtmlError)
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		if self._file is None:
 			return
 		self._file.close()
 		if not os.listdir(self._resDir):
 			os.rmdir(self._resDir)
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		self._file = open(filename, "w", encoding=self._encoding)
 		# dictgen's ParseDictFile does not seem to support glossary info / metedata
 		self._resDir = filename + "_res"
@@ -163,8 +184,8 @@ class Writer(object):
 			os.mkdir(self._resDir)
 
 	def write(
-		self,
-	) -> "Generator[None, BaseEntry, None]":
+		self: "typing.Self",
+	) -> "Generator[None, EntryType, None]":
 		fileObj = self._file
 		resDir = self._resDir
 		while True:
@@ -179,7 +200,6 @@ class Writer(object):
 
 			entry.detectDefiFormat()
 			if entry.defiFormat == "h":
-				entry.stripFullHtml()
 				defi = f"<html>{entry.defi}"
 
 			fileObj.write(f"@ {fixWord(words[0])}\n")

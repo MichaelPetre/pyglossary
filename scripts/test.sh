@@ -7,7 +7,11 @@ rootDir=$(dirname "$myDir1")
 
 echo "$rootDir/tests"
 cd "$rootDir/tests"
-python -m unittest *_test.py
+# python -m unittest *_test.py
+for F in *_test.py ; do
+	echo $F
+    python -m unittest $F
+done
 
 
 echo

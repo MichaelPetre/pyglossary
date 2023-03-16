@@ -1,33 +1,33 @@
 import sys
-from os.path import dirname, abspath
+import typing
 import unittest
+from os.path import abspath, dirname
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from tests.glossary_test import TestGlossaryBase
-from pyglossary.glossary import Glossary
+from tests.glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryDictionaryForMIDs(TestGlossaryBase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 		self.dataFileCRC32.update({
 			"100-en-fa.mids.zip": "32d1185f",
 		})
 
-	def convert_txt_mids(self, fname, sha1sumDict, **convertArgs):
+	def convert_txt_mids(self: "typing.Self", fname, sha1sumDict, **convertArgs):
 		outputFname = f"{fname}-2.mids.zip"
 		outputFpath = self.newTempFilePath(outputFname)
 		# expectedFpath = self.downloadFile(f"{fname}.mids.zip")
 		self.convert(
 			f"{fname}.txt",
 			outputFname,
-			**convertArgs
+			**convertArgs,
 		)
 		self.checkZipFileSha1sum(outputFpath, sha1sumDict)
 
-	def test_convert_txt_mids_1(self):
+	def test_convert_txt_mids_1(self: "typing.Self"):
 		sha1sumDict = {
 			"DictionaryForMIDs.properties": \
 				"4260a87d6cdd55622dcfe395880bc913f96102b8",

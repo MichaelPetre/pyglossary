@@ -18,16 +18,26 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-import re
 import html
 import html.entities
+import re
+import typing
+from typing import Iterator
 from xml.sax.saxutils import escape, quoteattr
 
-from pyglossary.plugins.formats_common import *
+from pyglossary.compression import (
+	compressionOpen,
+	stdCompressions,
+)
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
 from pyglossary.text_reader import TextFilePosWrapper
 
-from . import layer
-from . import tag
 from .main import (
 	DSLParser,
 )
@@ -45,10 +55,14 @@ website = (
 	"https://www.lingvo.ru/",
 	"www.lingvo.ru",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
-	"audio": BoolOption(comment="Enable audio objects"),
-	"only_fix_markup": BoolOption(comment="Only fix markup, without tag conversion"),
+	"audio": BoolOption(
+		comment="Enable audio objects",
+	),
+	"only_fix_markup": BoolOption(
+		comment="Only fix markup, without tag conversion",
+	),
 }
 
 # ABBYY is a Russian company
@@ -56,8 +70,6 @@ optionsProp = {
 # http://lingvo.helpmax.net/en/troubleshooting/dsl-compiler/compiling-a-dictionary/
 # https://www.abbyy.com/news/abbyy-lingvo-80-dictionaries-to-suit-every-taste/
 
-
-__all__ = ["read"]
 
 # {{{
 # modified to work around codepoints that are not supported by `unichr`.
@@ -73,8 +85,8 @@ __all__ = ["read"]
 htmlEntityPattern = re.compile(r"&#?\w+;")
 
 
-def unescape(text):
-	def fixup(m):
+def unescape(text: str) -> str:
+	def fixup(m: "re.Match") -> str:
 		text = m.group(0)
 		if text[:2] == "&#":
 			# character reference
@@ -102,11 +114,11 @@ def unescape(text):
 # }}}
 
 
-def make_a_href(s):
+def make_a_href(s: str) -> str:
 	return f"<a href={quoteattr(s)}>{escape(s)}</a>"
 
 
-def ref_sub(x):
+def ref_sub(x: "re.Match") -> str:
 	return make_a_href(unescape(x.groups()[0]))
 
 
@@ -115,18 +127,18 @@ shortcuts = [
 	# canonical: m > * > ex > i > c
 	(
 		"[m1](?:-{2,})[/m]",
-		"<hr/>"
+		"<hr/>",
 	),
 	(
 		"[m(\\d)](?:-{2,})[/m]",
-		"<hr style=\"margin-left:\\g<1>em\"/>"
+		"<hr style=\"margin-left:\\g<1>em\"/>",
 	),
 ]
 
 shortcuts = [
 	(
 		re.compile(repl.replace("[", "\\[").replace("*]", "\\*]")),
-		sub
+		sub,
 	) for (repl, sub) in shortcuts
 ]
 
@@ -149,13 +161,13 @@ re_ref = re.compile("<<(.*?)>>")
 _parse = DSLParser().parse
 
 
-def apply_shortcuts(line):
+def apply_shortcuts(line: str) -> str:
 	for pattern, sub in shortcuts:
 		line = pattern.sub(sub, line)
 	return line
 
 
-def _clean_tags(line, audio):
+def _clean_tags(line: str, audio: bool) -> str:
 	r"""
 	[m{}] => <div style="margin-left:{}em">
 	[*]   => <span class="sec">
@@ -214,7 +226,7 @@ def _clean_tags(line, audio):
 	# remove t tags
 	line = line.replace(
 		"[t]",
-		"<font face=\"Helvetica\" class=\"dsl_t\">"
+		"<font face=\"Helvetica\" class=\"dsl_t\">",
 	)
 	line = line.replace("[/t]", "</font>")
 
@@ -268,10 +280,12 @@ def _clean_tags(line, audio):
 
 	# sound file
 	if audio:
-		sound_tag = r'<object type="audio/x-wav" data="\g<1>\g<2>" ' \
-			"width=\"40\" height=\"40\">" \
-			"<param name=\"autoplay\" value=\"false\" />" \
+		sound_tag = (
+			r'<object type="audio/x-wav" data="\g<1>\g<2>" '
+			"width=\"40\" height=\"40\">"
+			"<param name=\"autoplay\" value=\"false\" />"
 			"</object>"
+		)
 	else:
 		sound_tag = ""
 	line = re_sound.sub(sound_tag, line)
@@ -283,11 +297,10 @@ def _clean_tags(line, audio):
 	)
 
 	# \[...\]
-	line = line.replace("\\[", "[").replace("\\]", "]")
-	return line
+	return line.replace("\\[", "[").replace("\\]", "]")
 
 
-def unwrap_quotes(s):
+def unwrap_quotes(s: str) -> str:
 	return re_wrapped_in_quotes.sub("\\2", s)
 
 
@@ -301,27 +314,27 @@ class Reader(object):
 	re_tags_open = re.compile(r"(?<!\\)\[(c |[cuib]\])")
 	re_tags_close = re.compile(r"\[/[cuib]\]")
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self.clean_tags = _clean_tags
 		self._file = None
 		self._fileSize = 0
 		self._bufferLine = ""
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._file:
 			self._file.close()
 		self._file = None
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		# FIXME
 		return 0
 
-	def _clean_tags_only_markup(self, line, audio):
+	def _clean_tags_only_markup(self: "typing.Self", line: str, audio: bool) -> str:
 		return _parse(line)
 
 	def open(
-		self,
+		self: "typing.Self",
 		filename: str,
 	) -> None:
 		self._filename = filename
@@ -352,7 +365,7 @@ class Reader(object):
 
 		# read header
 		for line in self._file:
-			line = line.rstrip().lstrip('\ufeff')
+			line = line.rstrip().lstrip('\ufeff')  # noqa: B005
 			# \ufeff -> https://github.com/ilius/pyglossary/issues/306
 			if not line:
 				continue
@@ -361,7 +374,7 @@ class Reader(object):
 				break
 			self.processHeaderLine(line)
 
-	def detectEncoding(self):
+	def detectEncoding(self: "typing.Self") -> str:
 		for testEncoding in ("utf-8", "utf-16"):
 			with compressionOpen(
 				self._filename,
@@ -370,7 +383,7 @@ class Reader(object):
 				encoding=testEncoding,
 			) as fileObj:
 				try:
-					for i in range(10):
+					for _ in range(10):
 						fileObj.readline()
 				except UnicodeDecodeError:
 					log.info(f"Encoding of DSL file is not {testEncoding}")
@@ -380,13 +393,13 @@ class Reader(object):
 					return testEncoding
 		raise ValueError(
 			"Could not detect encoding of DSL file"
-			", specify it by: --read-options encoding=ENCODING"
+			", specify it by: --read-options encoding=ENCODING",
 		)
 
-	def setInfo(self, key, value):
+	def setInfo(self: "typing.Self", key: str, value: str) -> None:
 		self._glos.setInfo(key, unwrap_quotes(value))
 
-	def processHeaderLine(self, line):
+	def processHeaderLine(self: "typing.Self", line: str) -> None:
 		if line.startswith("#NAME"):
 			self.setInfo("name", unwrap_quotes(line[6:].strip()))
 		elif line.startswith("#INDEX_LANGUAGE"):
@@ -394,7 +407,7 @@ class Reader(object):
 		elif line.startswith("#CONTENTS_LANGUAGE"):
 			self._glos.targetLangName = unwrap_quotes(line[19:].strip())
 
-	def _iterLines(self) -> "Iterator[str]":
+	def _iterLines(self: "typing.Self") -> "Iterator[str]":
 		if self._bufferLine:
 			line = self._bufferLine
 			self._bufferLine = ""
@@ -402,7 +415,7 @@ class Reader(object):
 		for line in self._file:
 			yield line
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		current_key = ""
 		current_key_alters = []
 		current_text = []

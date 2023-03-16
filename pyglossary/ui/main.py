@@ -19,17 +19,24 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
-import os
-import sys
 import argparse
 import json
 import logging
+import os
+import sys
+import typing
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from typing import Callable, Dict, List
+
+	from pyglossary.option import Option
+
 
 from pyglossary import core  # essential
-from pyglossary.entry import Entry
-from pyglossary.ui.base import UIBase
 from pyglossary.langs import langDict
-from pyglossary.sort_keys import namedSortKeyList, namedSortKeyByName
+from pyglossary.sort_keys import lookupSortKey, namedSortKeyList
+from pyglossary.ui.base import UIBase
 
 # the first thing to do is to set up logger.
 # other modules also using logger "root", so it is essential to set it up prior
@@ -56,14 +63,18 @@ from pyglossary.sort_keys import namedSortKeyList, namedSortKeyByName
 
 log = None
 
+ui_list = ["gtk", "tk"]
+if os.sep == "\\":
+	ui_list = ["tk", "gtk"]
 
-def canRunGUI():
+
+def canRunGUI() -> bool:
 	if core.sysName == "linux":
 		return bool(os.getenv("DISPLAY"))
 
 	if core.sysName == "darwin":
 		try:
-			import tkinter
+			import tkinter  # noqa: F401
 		except ModuleNotFoundError:
 			return False
 
@@ -72,33 +83,33 @@ def canRunGUI():
 
 class StoreConstAction(argparse.Action):
 	def __init__(
-		self,
-		option_strings,
-		same_dest="",
-		const_value=None,
-		nargs=0,
-		**kwargs
-	):
+		self: "typing.Self",
+		option_strings: "list[str]",
+		same_dest: str = "",
+		const_value: "bool | None" = None,
+		nargs: int = 0,
+		**kwargs,
+	) -> None:
 		if isinstance(option_strings, str):
 			option_strings = [option_strings]
 		argparse.Action.__init__(
 			self,
 			option_strings=option_strings,
 			nargs=nargs,
-			**kwargs
+			**kwargs,
 		)
 		self.same_dest = same_dest
 		self.const_value = const_value
 
 	def __call__(
-		self,
-		parser=None,
-		namespace=None,
-		values=None,
-		option_strings=None,
-		required=False,
-		dest=None,
-	):
+		self: "typing.Self",
+		parser: "argparse.ArgumentParser | None" = None,
+		namespace: "argparse.Namespace | None" = None,
+		values: "List" = None,
+		option_strings: "list[str]" = None,
+		required: bool = False,
+		dest: "str | None" = None,
+	) -> "StoreConstAction":
 		if not parser:
 			return self
 		dest = self.dest
@@ -112,7 +123,11 @@ class StoreConstAction(argparse.Action):
 		return self
 
 
-def registerConfigOption(parser, key: str, option: "Option"):
+def registerConfigOption(
+	parser: "argparse.ArgumentParser",
+	key: str,
+	option: "Option",
+) -> None:
 	if not option.hasFlag:
 		return
 	flag = option.customFlag
@@ -172,13 +187,13 @@ def base_ui_run(
 	inputFormat: str = "",
 	outputFormat: str = "",
 	reverse: bool = False,
-	config: "Optional[Dict]" = None,
-	readOptions: "Optional[Dict]" = None,
-	writeOptions: "Optional[Dict]" = None,
-	convertOptions: "Optional[Dict]" = None,
-	glossarySetAttrs: "Optional[Dict]" = None,
-):
-	from pyglossary.glossary import Glossary
+	config: "Dict | None" = None,
+	readOptions: "Dict | None" = None,
+	writeOptions: "Dict | None" = None,
+	convertOptions: "Dict | None" = None,
+	glossarySetAttrs: "Dict | None" = None,
+) -> bool:
+	from pyglossary.glossary_v2 import ConvertArgs, Glossary
 	if reverse:
 		log.error("--reverse does not work with --ui=none")
 		return False
@@ -189,19 +204,19 @@ def base_ui_run(
 	if glossarySetAttrs:
 		for attr, value in glossarySetAttrs.items():
 			setattr(glos, attr, value)
-	glos.convert(
+	glos.convert(ConvertArgs(
 		inputFilename=inputFilename,
 		outputFilename=outputFilename,
 		inputFormat=inputFormat,
 		outputFormat=outputFormat,
 		readOptions=readOptions,
 		writeOptions=writeOptions,
-		**convertOptions
-	)
+		**convertOptions,
+	))
 	return True
 
 
-def getGitVersion(gitDir):
+def getGitVersion(gitDir: str) -> str:
 	import subprocess
 	try:
 		outputB, error = subprocess.Popen(
@@ -220,7 +235,7 @@ def getGitVersion(gitDir):
 	return outputB.decode("utf-8").strip()
 
 
-def getVersion():
+def getVersion() -> str:
 	from pyglossary.core import rootDir
 	gitDir = os.path.join(rootDir, ".git")
 	if os.path.isdir(gitDir):
@@ -230,7 +245,7 @@ def getVersion():
 	return core.VERSION
 
 
-def validateLangStr(st) -> "Optional[str]":
+def validateLangStr(st: str) -> "str | None":
 	lang = langDict[st]
 	if lang:
 		return lang.name
@@ -238,10 +253,67 @@ def validateLangStr(st) -> "Optional[str]":
 	if lang:
 		return lang.name
 	log.error(f"unknown language {st!r}")
-	return
+	return None
 
 
-def main():
+def shouldUseCMD(args: "argparse.Namespace") -> bool:
+	if not canRunGUI():
+		return True
+	if args.interactive:
+		return True
+	if args.inputFilename and args.outputFilename:
+		return True
+	return False
+
+
+def getRunner(args: "argparse.Namespace", ui_type: str) -> "Callable":
+	if ui_type == "none":
+		return base_ui_run
+
+	if ui_type == "auto" and shouldUseCMD(args):
+		ui_type = "cmd"
+
+	uiArgs = {
+		"progressbar": args.progressbar is not False,
+	}
+
+	if ui_type == "cmd":
+		if args.interactive:
+			from pyglossary.ui.ui_cmd_interactive import UI
+		elif args.inputFilename and args.outputFilename:
+			from pyglossary.ui.ui_cmd import UI
+		elif not args.no_interactive:
+			from pyglossary.ui.ui_cmd_interactive import UI
+		else:
+			log.error("no input file given, try --help")
+			sys.exit(1)
+		return UI(**uiArgs).run
+
+	if ui_type == "auto":
+		for ui_type2 in ui_list:
+			try:
+				ui_module = __import__(
+					f"pyglossary.ui.ui_{ui_type2}",
+					fromlist=f"ui_{ui_type2}",
+				)
+			except ImportError as e:
+				log.error(str(e))
+			else:
+				return ui_module.UI(**uiArgs).run
+		log.error(
+			"no user interface module found! "
+			f"try \"{sys.argv[0]} -h\" to see command line usage",
+		)
+		sys.exit(1)
+
+	ui_module = __import__(
+		f"pyglossary.ui.ui_{ui_type}",
+		fromlist=f"ui_{ui_type}",
+	)
+	return ui_module.UI(**uiArgs).run
+
+
+def main() -> None:
 	global log
 
 	uiBase = UIBase()
@@ -267,7 +339,7 @@ def main():
 		type=int,
 		choices=(0, 1, 2, 3, 4, 5),
 		required=False,
-		default=3,
+		default=int(os.getenv("VERBOSITY", "3")),
 	)
 
 	parser.add_argument(
@@ -455,20 +527,6 @@ def main():
 		default=None,
 		help="encoding of sort (default utf-8)",
 	)
-	parser.add_argument(
-		"--sort-locale",
-		action="store",
-		dest="sortLocale",
-		default=None,
-		help="use given locale for sort (conflicts with --sort-encoding)",
-	)
-	parser.add_argument(
-		"--sort-script",
-		action="store",
-		dest="sortScriptStr",
-		default=None,
-		help="use given locale for sort (conflicts with --sort-encoding)",
-	)
 
 	# _______________________________
 
@@ -515,15 +573,6 @@ def main():
 		nargs="?",
 	)
 
-	def shouldUseCMD(args):
-		if not canRunGUI():
-			return True
-		if args.interactive:
-			return True
-		if args.inputFilename and args.outputFilename:
-			return True
-		return False
-
 	# _______________________________
 
 	for key, option in UIBase.configDefDict.items():
@@ -547,7 +596,7 @@ def main():
 
 	core.noColor = args.noColor
 	logHandler = core.StdLogHandler(
-		noColor=args.noColor
+		noColor=args.noColor,
 	)
 	log.setVerbosity(args.verbosity)
 	log.addHandler(logHandler)
@@ -559,7 +608,7 @@ def main():
 			log.critical(
 				"Conflicting flags: "
 				f"--{param1.replace('_', '-')} and "
-				f"--{param2.replace('_', '-')}"
+				f"--{param2.replace('_', '-')}",
 			)
 			sys.exit(1)
 
@@ -574,22 +623,15 @@ def main():
 		if args.sortEncoding:
 			log.critical("Passed --sort-encoding without --sort")
 			sys.exit(1)
-		if args.sortLocale:
-			log.critical("Passed --sort-locale without --sort")
-			sys.exit(1)
 
-	if args.sortKeyName:
-		if args.sortKeyName not in namedSortKeyByName:
-			_valuesStr = ", ".join([_sk.name for _sk in namedSortKeyList])
-			log.critical(
-				f"Invalid sortKeyName={args.sortKeyName!r}"
-				f". Supported values:\n{_valuesStr}"
-			)
-			sys.exit(1)
-
-	if args.sortEncoding and args.sortLocale:
-		log.critical("--sort-locale conflicts with --sort-encoding")
+	if args.sortKeyName and not lookupSortKey(args.sortKeyName):
+		_valuesStr = ", ".join([_sk.name for _sk in namedSortKeyList])
+		log.critical(
+			f"Invalid sortKeyName={args.sortKeyName!r}"
+			f". Supported values:\n{_valuesStr}",
+		)
 		sys.exit(1)
+
 
 	core.checkCreateConfDir()
 
@@ -598,7 +640,7 @@ def main():
 
 	##############################
 
-	from pyglossary.glossary import Glossary
+	from pyglossary.glossary_v2 import Glossary
 	from pyglossary.langs import langDict
 	from pyglossary.ui.ui_cmd import help, parseFormatOptionsStr
 
@@ -608,11 +650,6 @@ def main():
 		log.debug(f"en -> {langDict['en']!r}")
 
 	##############################
-
-	ui_list = ["gtk", "tk"]
-	if os.sep == "\\":
-		ui_list = ["tk", "gtk"]
-
 
 	# log.info(f"PyGlossary {core.VERSION}")
 
@@ -631,7 +668,7 @@ def main():
 		else:
 			log.error(
 				f"invalid value for --json-read-options, "
-				f"must be an object/dict, not {type(newReadOptions)}"
+				f"must be an object/dict, not {type(newReadOptions)}",
 			)
 
 	writeOptions = parseFormatOptionsStr(args.writeOptions)
@@ -644,7 +681,7 @@ def main():
 		else:
 			log.error(
 				f"invalid value for --json-write-options, "
-				f"must be an object/dict, not {type(newWriteOptions)}"
+				f"must be an object/dict, not {type(newWriteOptions)}",
 			)
 
 	"""
@@ -665,11 +702,9 @@ def main():
 
 	convertOptionsKeys = (
 		"direct",
-		"progressbar",
 		"sort",
 		"sortKeyName",
 		"sortEncoding",
-		"sortLocale",
 		"sqlite",
 	)
 	infoOverrideSpec = (
@@ -698,9 +733,6 @@ def main():
 		if value is not None:
 			convertOptions[key] = value
 
-	if args.sortScriptStr:
-		convertOptions["sortScript"] = args.sortScriptStr.split(",")
-
 	infoOverride = {}
 	for key, validate in infoOverrideSpec:
 		value = getattr(args, key, None)
@@ -720,7 +752,7 @@ def main():
 		)
 		if not inputArgs:
 			log.error(
-				f"Could not detect format for input file {args.inputFilename}"
+				f"Could not detect format for input file {args.inputFilename}",
 			)
 			sys.exit(1)
 		inputFormat = inputArgs[1]
@@ -734,7 +766,7 @@ def main():
 			if not ok or not prop.validate(optValueNew):
 				log.error(
 					f"Invalid option value {optName}={optValue!r}"
-					f" for format {inputFormat}"
+					f" for format {inputFormat}",
 				)
 				sys.exit(1)
 			readOptions[optName] = optValueNew
@@ -758,7 +790,7 @@ def main():
 			if not ok or not prop.validate(optValueNew):
 				log.error(
 					f"Invalid option value {optName}={optValue!r}"
-					f" for format {outputFormat}"
+					f" for format {outputFormat}",
 				)
 				sys.exit(1)
 			writeOptions[optName] = optValueNew
@@ -779,46 +811,10 @@ def main():
 		glossarySetAttrs=None,
 	)
 
-	if ui_type == "none":
-		sys.exit(0 if base_ui_run(**runKeywordArgs) else 1)
-
-	if ui_type == "auto" and shouldUseCMD(args):
-		ui_type = "cmd"
-
-	if ui_type == "cmd":
-		if args.interactive:
-			from pyglossary.ui.ui_cmd_interactive import UI
-		elif args.inputFilename and args.outputFilename:
-			from pyglossary.ui.ui_cmd import UI
-		elif not args.no_interactive:
-			from pyglossary.ui.ui_cmd_interactive import UI
-		else:
-			log.error("no input file given, try --help")
-			sys.exit(1)
-		sys.exit(0 if UI().run(**runKeywordArgs) else 1)
-
-	if ui_type == "auto":
-		ui_module = None
-		for ui_type2 in ui_list:
-			try:
-				ui_module = __import__(
-					f"pyglossary.ui.ui_{ui_type2}",
-					fromlist=f"ui_{ui_type2}",
-				)
-			except ImportError as e:
-				log.error(str(e))
-			else:
-				break
-		if ui_module is None:
-			log.error(
-				"no user interface module found! "
-				f"try \"{sys.argv[0]} -h\" to see command line usage"
-			)
-			sys.exit(1)
-	else:
-		ui_module = __import__(
-			f"pyglossary.ui.ui_{ui_type}",
-			fromlist=f"ui_{ui_type}",
-		)
-
-	sys.exit(0 if ui_module.UI().run(**runKeywordArgs) else 1)
+	run = getRunner(args, ui_type)
+	try:
+		ok = run(**runKeywordArgs)
+	except KeyboardInterrupt:
+		log.error("Cancelled")
+		ok = False
+	sys.exit(0 if ok else 1)

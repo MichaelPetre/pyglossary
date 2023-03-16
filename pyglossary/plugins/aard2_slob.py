@@ -1,7 +1,24 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import os
+import re
 import shutil
+import typing
+from os.path import isfile, splitext
+from typing import TYPE_CHECKING, Generator, Iterator
+
+if TYPE_CHECKING:
+	from pyglossary import slob
+
+from pyglossary.core import cacheDir, log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	FileSizeOption,
+	IntOption,
+	Option,
+	StrOption,
+)
 
 enable = True
 lname = "aard2_slob"
@@ -16,7 +33,7 @@ website = (
 	"http://aarddict.org/",
 	"aarddict.org",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"compression": StrOption(
 		values=["", "bz2", "zlib", "lzma2"],
 		comment="Compression Algorithm",
@@ -33,11 +50,17 @@ optionsProp = {
 	"file_size_approx": FileSizeOption(
 		comment="split up by given approximate file size\nexamples: 100m, 1g",
 	),
+	"file_size_approx_check_num_entries": IntOption(
+		comment="for file_size_approx, check every [?] entries",
+	),
 	"separate_alternates": BoolOption(
 		comment="add alternate headwords as separate entries to slob",
 	),
 	"word_title": BoolOption(
 		comment="add headwords title to beginning of definition",
+	),
+	"version_info": BoolOption(
+		comment="add version info tags to slob file",
 	),
 }
 
@@ -49,38 +72,36 @@ extraDocs = [
 	),
 ]
 
-file_size_check_every = 100
-
 
 class Reader(object):
 	depends = {
 		"icu": "PyICU",  # >=1.5
 	}
 
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 		self._re_bword = re.compile(
 			'(<a href=[^<>]+?>)',
 			re.I,
 		)
-		try:
-			import icu
-		except ModuleNotFoundError as e:
-			e.msg += f", run `{pip} install PyICU` to install"
-			raise e
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._slobObj is not None:
 			self._slobObj.close()
 		self._clear()
 
-	def _clear(self):
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ""
-		self._slobObj = None  # slobObj is instance of slob.Slob class
+		self._slobObj: "slob.Slob | None" = None
 
-	def open(self, filename):
-		from pyglossary.plugin_lib import slob
+	def open(self: "typing.Self", filename: str) -> None:
+		try:
+			import icu  # noqa: F401
+		except ModuleNotFoundError as e:
+			e.msg += f", run `{pip} install PyICU` to install"
+			raise e
+		from pyglossary import slob
 		self._filename = filename
 		self._slobObj = slob.open(filename)
 		tags = dict(self._slobObj.tags.items())
@@ -133,22 +154,21 @@ class Reader(object):
 		for key, value in tags.items():
 			self._glos.setInfo(f"slob.{key}", value)
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		if self._slobObj is None:
 			log.error("called len() on a reader which is not open")
 			return 0
 		return len(self._slobObj)
 
-	def _href_sub(self, m: "re.Match") -> str:
+	def _href_sub(self: "typing.Self", m: "re.Match") -> str:
 		st = m.group(0)
 		if "//" in st:
 			return st
-		st = st.replace('href="', 'href="bword://')
-		st = st.replace("href='", "href='bword://")
-		return st
+		return st.replace('href="', 'href="bword://')\
+			.replace("href='", "href='bword://")
 
-	def __iter__(self):
-		from pyglossary.plugin_lib.slob import MIME_HTML, MIME_TEXT
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType | None]":
+		from pyglossary.slob import MIME_HTML, MIME_TEXT
 		if self._slobObj is None:
 			raise RuntimeError("iterating over a reader while it's not open")
 
@@ -172,8 +192,7 @@ class Reader(object):
 			ctype = blob.content_type.split(";")[0]
 			if ctype not in (MIME_HTML, MIME_TEXT):
 				log.debug(f"unknown {blob.content_type=} in {word=}")
-				if word.startswith("~/"):
-					word = word[2:]
+				word = word.removeprefix("~/")
 				yield self._glos.newDataEntry(word, blob.content)
 				continue
 			defiFormat = ""
@@ -195,8 +214,10 @@ class Writer(object):
 	_compression: str = "zlib"
 	_content_type: str = ""
 	_file_size_approx: int = 0
+	_file_size_approx_check_num_entries = 100
 	_separate_alternates: bool = False
 	_word_title: bool = False
+	_version_info: bool = False
 
 	resourceMimeTypes = {
 		"png": "image/png",
@@ -220,34 +241,36 @@ class Writer(object):
 		"pdf": "application/pdf",
 	}
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
+		self._filename = ""
 		self._resPrefix = ""
-		self._slobWriter = None
+		self._slobWriter: "slob.Writer | None" = None
 
-	def _slobObserver(self, event: "slob.WriterEvent"):
+	def _slobObserver(
+		self: "typing.Self",
+		event: "slob.WriterEvent",  # noqa: F401, F821
+	) -> None:
 		log.debug(f"slob: {event.name}{': ' + event.data if event.data else ''}")
 
-	def _open(self, filename: str, namePostfix: str) -> None:
-		import icu
-		from pyglossary.plugin_lib import slob
+	def _open(self: "typing.Self", filename: str, namePostfix: str) -> "slob.Writer":
+		from pyglossary import slob
 		if isfile(filename):
 			shutil.move(filename, f"{filename}.bak")
 			log.warning(f"renamed existing {filename!r} to {filename+'.bak'!r}")
-		kwargs = {}
-		kwargs["compression"] = self._compression
 		self._slobWriter = slobWriter = slob.Writer(
 			filename,
 			observer=self._slobObserver,
 			workdir=cacheDir,
-			**kwargs
+			compression=self._compression,
+			version_info=self._version_info,
 		)
 		slobWriter.tag("label", self._glos.getInfo("name") + namePostfix)
+		return slobWriter
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		try:
-			import icu
+			import icu  # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install PyICU` to install"
 			raise e
@@ -259,14 +282,21 @@ class Writer(object):
 		self._open(filename, namePostfix)
 		self._filename = filename
 
-	def finish(self):
-		self._filename = None
-		if self._slobWriter is not None:
-			self._slobWriter.finalize()
-			self._slobWriter = None
+	def finish(self: "typing.Self") -> None:
+		from time import time
+		self._filename = ""
+		if self._slobWriter is None:
+			return
+		log.info("Finalizing slob file...")
+		t0 = time()
+		self._slobWriter.finalize()
+		log.info(f"Finalizing slob file took {time() - t0:.1f} seconds")
+		self._slobWriter = None
 
-	def addDataEntry(self, entry: "DataEntry") -> None:
+	def addDataEntry(self: "typing.Self", entry: "EntryType") -> None:
 		slobWriter = self._slobWriter
+		if slobWriter is None:
+			raise ValueError("slobWriter is None")
 		rel_path = entry.s_word
 		_, ext = splitext(rel_path)
 		ext = ext.lstrip(os.path.extsep).lower()
@@ -283,11 +313,13 @@ class Writer(object):
 			return
 		slobWriter.add(content, key, content_type=content_type)
 
-	def addEntry(self, entry: "Entry") -> None:
+	def addEntry(self: "typing.Self", entry: "EntryType") -> None:
 		words = entry.l_word
 		b_defi = entry.defi.encode("utf-8")
 		_ctype = self._content_type
 		writer = self._slobWriter
+		if writer is None:
+			raise ValueError("slobWriter is None")
 
 		entry.detectDefiFormat()
 		defiFormat = entry.defiFormat
@@ -333,7 +365,10 @@ class Writer(object):
 				content_type=_ctype,
 			)
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+		slobWriter = self._slobWriter
+		if slobWriter is None:
+			raise ValueError("slobWriter is None")
 		file_size_approx = int(self._file_size_approx * 0.95)
 		entryCount = 0
 		sumBlobSize = 0
@@ -350,12 +385,16 @@ class Writer(object):
 				self.addEntry(entry)
 
 			if file_size_approx > 0:
+				check_every = self._file_size_approx_check_num_entries
 				entryCount += 1
-				if entryCount % file_size_check_every == 0:
-					sumBlobSize = self._slobWriter.size_data()
+				if entryCount % check_every == 0:
+					sumBlobSize = slobWriter.size_data()
 					if sumBlobSize >= file_size_approx:
-						self._slobWriter.finalize()
+						slobWriter.finalize()
 						fileIndex += 1
-						self._open(f"{filenameNoExt}.{fileIndex}.slob", f" (part {fileIndex+1})")
+						slobWriter = self._open(
+							f"{filenameNoExt}.{fileIndex}.slob",
+							f" (part {fileIndex+1})",
+						)
 						sumBlobSize = 0
 						entryCount = 0

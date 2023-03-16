@@ -1,14 +1,9 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import re
 
-import logging
 log = logging.getLogger("pyglossary")
-
-
-def toStr(s: "AnyStr") -> str:
-	return str(s, "utf-8") if isinstance(s, bytes) else str(s)
-
 
 re_entity = re.compile(
 	r"&#?\w+;",
@@ -176,7 +171,7 @@ name2codepoint = {
 	"Mu": 0x039c,  # Μ
 	"mu": 0x03bc,  # μ
 	"nabla": 0x2207,  # ∇
-	"nbsp": 0x00a0,  #  
+	"nbsp": 0x00a0,  # space
 	"ndash": 0x2013,  # –
 	"ne": 0x2260,  # ≠
 	"ni": 0x220b,  # ∋
@@ -313,7 +308,7 @@ name2codepoint = {
 }
 
 
-def build_name2codepoint_dict():
+def build_name2codepoint_dict() -> None:
 	"""
 		Builds name to codepoint dictionary
 		copy and paste the output to the name2codepoint dictionary
@@ -358,7 +353,7 @@ def _sub_unescape_unicode(m: "re.Match") -> str:
 	return text
 
 
-def unescape_unicode(text):
+def unescape_unicode(text: str) -> str:
 	"""
 		unscape unicode entities, but not "&lt;", "&gt;" and "&amp;"
 		leave these 3 special entities alone, since unescaping them

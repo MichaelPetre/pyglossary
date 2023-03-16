@@ -22,14 +22,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from pyglossary.plugins.formats_common import *
-from itertools import groupby
-from pathlib import Path
-import unicodedata
 import re
-from pickle import dumps, loads
+import typing
+import unicodedata
 from gzip import compress, decompress
 from operator import itemgetter
+from pathlib import Path
+from pickle import dumps, loads
+from typing import Generator
+
+from pyglossary.core import log, pip
+from pyglossary.flags import NEVER
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import Option
+from pyglossary.os_utils import indir
 
 enable = True
 lname = "kobo"
@@ -48,7 +54,7 @@ website = (
 # https://help.kobo.com/hc/en-us/articles/360017640093-Add-new-dictionaries-to-your-Kobo-eReader
 
 
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 }
 
 
@@ -89,7 +95,10 @@ class Writer:
 		"marisa_trie": "marisa-trie",
 	}
 
-	def __init__(self, glos, **kwargs):
+	def stripFullHtmlError(self: "typing.Self", entry: "EntryType", error: str) -> None:
+		log.error(f"error in stripFullHtml: {error}, words={entry.l_word!r}")
+
+	def __init__(self: "typing.Self", glos: "GlossaryType", **kwargs) -> None:
 		self._glos = glos
 		self._filename = None
 		self._words = []
@@ -98,13 +107,9 @@ class Writer:
 			re.DOTALL,
 		)
 		# img tag has no closing
-		try:
-			import marisa_trie
-		except ModuleNotFoundError as e:
-			e.msg += f", run `{pip} install marisa-trie` to install"
-			raise e
+		glos.stripFullHtml(errorHandler=self.stripFullHtmlError)
 
-	def get_prefix(self, word: str) -> str:
+	def get_prefix(self: "typing.Self", word: str) -> str:
 		if not word:
 			return "11"
 		wo = word[:2].strip().lower()
@@ -123,7 +128,7 @@ class Writer:
 		wo = wo.ljust(2, "a")
 		return wo
 
-	def fix_defi(self, defi: str) -> str:
+	def fix_defi(self: "typing.Self", defi: str) -> str:
 		# @pgaskin on #219: Kobo supports images in dictionaries,
 		# but these have a lot of gotchas
 		# (see https://pgaskin.net/dictutil/dicthtml/format.html).
@@ -132,15 +137,12 @@ class Writer:
 		# (if it's JPG, this is as simple as only keeping the Y channel)
 
 		# for now we just skip data entries and remove '<img' tags
-		defi = self._img_pattern.sub("[Image: \\1]", defi)
-		return defi
+		return self._img_pattern.sub("[Image: \\1]", defi)
 
-	def write_groups(self):
+	def write_groups(self: "typing.Self") -> None:
 		import gzip
 		from collections import OrderedDict
-		from pyglossary.entry import Entry
 
-		glos = self._glos
 		dataEntryCount = 0
 
 		htmlHeader = "<?xml version=\"1.0\" encoding=\"utf-8\"?><html>\n"
@@ -148,13 +150,13 @@ class Writer:
 		groupCounter = 0
 		htmlContents = htmlHeader
 
-		def writeGroup(lastPrefix):
+		def writeGroup(lastPrefix: str) -> None:
 			nonlocal htmlContents
 			group_fname = fixFilename(lastPrefix)
 			htmlContents += "</html>"
 			log.trace(
 				f"writeGroup: {lastPrefix!r}, "
-				f"{group_fname!r}, count={groupCounter}"
+				f"{group_fname!r}, count={groupCounter}",
 			)
 			with gzip.open(group_fname + ".html", mode="wb") as gzipFile:
 				gzipFile.write(htmlContents.encode("utf-8"))
@@ -179,7 +181,6 @@ class Writer:
 					wordsByPrefix[prefix].append(word)
 				else:
 					wordsByPrefix[prefix] = [word]
-			entry.stripFullHtml()
 			defi = self.fix_defi(entry.defi)
 			mainHeadword = l_word[0]
 			for prefix, p_words in wordsByPrefix.items():
@@ -192,14 +193,14 @@ class Writer:
 						headword,
 						variants,
 						defi,
-					)))
+					))),
 				))
 			del entry
 
-		log.info(f"Kobo: sorting entries...")
+		log.info("Kobo: sorting entries...")
 		data.sort(key=itemgetter(0))
 
-		log.info(f"Kobo: writing entries...")
+		log.info("Kobo: writing entries...")
 
 		lastPrefix = ""
 		for prefix, row in data:
@@ -224,19 +225,24 @@ class Writer:
 		if dataEntryCount > 0:
 			log.warning(
 				f"ignored {dataEntryCount} files (data entries)"
-				" and replaced '<img ...' tags in definitions with placeholders"
+				" and replaced '<img ...' tags in definitions with placeholders",
 			)
 
 		self._words = allWords
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
+		try:
+			import marisa_trie  # noqa: F401
+		except ModuleNotFoundError as e:
+			e.msg += f", run `{pip} install marisa-trie` to install"
+			raise e
 		self._filename = filename
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		with indir(self._filename, create=True):
 			yield from self.write_groups()
 
-	def finish(self) -> None:
+	def finish(self: "typing.Self") -> None:
 		import marisa_trie
 		with indir(self._filename, create=False):
 			trie = marisa_trie.Trie(self._words)

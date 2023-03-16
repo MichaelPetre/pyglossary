@@ -18,17 +18,32 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-import sys
+import io
 import os
-from os.path import abspath, basename
-
-import re
 import pkgutil
 import shutil
+import sys
+import typing
+from os.path import basename, isdir, join
+from typing import Any, Dict, Generator
 
-from pyglossary.plugins.formats_common import *
-from ._dict import *
+from pyglossary.core import log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	DictOption,
+	Option,
+	StrOption,
+)
+from pyglossary.text_utils import toStr
+
 from ._content import prepare_content
+from ._dict import (
+	_normalize,
+	id_generator,
+	indexes_generator,
+	quote_string,
+)
 
 sys.setrecursionlimit(10000)
 
@@ -45,7 +60,7 @@ website = (
 	"Dictionary User Guide for Mac",
 )
 # FIXME: rename indexes arg/option to indexes_lang?
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"clean_html": BoolOption(comment="use BeautifulSoup parser"),
 	"css": StrOption(
 		comment="custom .css file path",
@@ -82,7 +97,7 @@ extraDocs = [
 BeautifulSoup = None
 
 
-def loadBeautifulSoup():
+def loadBeautifulSoup() -> None:
 	global BeautifulSoup
 	try:
 		import bs4 as BeautifulSoup
@@ -95,24 +110,26 @@ def loadBeautifulSoup():
 		raise ImportError(
 			f"BeautifulSoup is too old, required at least version 4, "
 			f"{BeautifulSoup.__version__!r} found.\n"
-			f"Please run `{pip} install lxml beautifulsoup4 html5lib`"
+			f"Please run `{pip} install lxml beautifulsoup4 html5lib`",
 		)
 
 
-def abspath_or_None(path):
-	return os.path.abspath(os.path.expanduser(path)) if path else None
+def abspath_or_None(path: "str | None") -> "str | None":
+	if not path:
+		return None
+	return os.path.abspath(os.path.expanduser(path))
 
 
 def write_header(
 	glos: "GlossaryType",
-	toFile: "TextIO",
-	front_back_matter: "Optional[str]",
+	toFile: "io.TextIOBase",
+	front_back_matter: "str | None",
 ) -> None:
 	# write header
 	toFile.write(
 		'<?xml version="1.0" encoding="UTF-8"?>\n'
 		'<d:dictionary xmlns="http://www.w3.org/1999/xhtml" '
-		'xmlns:d="http://www.apple.com/DTDs/DictionaryService-1.0.rng">\n'
+		'xmlns:d="http://www.apple.com/DTDs/DictionaryService-1.0.rng">\n',
 	)
 
 	if front_back_matter:
@@ -120,11 +137,11 @@ def write_header(
 			front_back_matter,
 			mode="r",
 			encoding="utf-8",
-		) as front_back_matter:
-			toFile.write(front_back_matter.read())
+		) as _file:
+			toFile.write(_file.read())
 
 
-def format_default_prefs(default_prefs):
+def format_default_prefs(default_prefs: "dict[str, Any] | None") -> str:
 	"""
 	:type default_prefs: dict or None
 
@@ -139,7 +156,7 @@ def format_default_prefs(default_prefs):
 	if str(default_prefs.get("version", None)) != "1":
 		log.error(
 			"default prefs does not contain {'version': '1'}.  prefs "
-			"will not be persistent between Dictionary.app restarts."
+			"will not be persistent between Dictionary.app restarts.",
 		)
 	return "\n".join(
 		f"\t\t<key>{key}</key>\n\t\t<string>{value}</string>"
@@ -147,16 +164,19 @@ def format_default_prefs(default_prefs):
 	).strip()
 
 
-def write_css(fname, css_file):
+def write_css(fname: str, css_file: str) -> None:
 	with open(fname, mode="wb") as toFile:
 		if css_file:
 			with open(css_file, mode="rb") as fromFile:
 				toFile.write(fromFile.read())
 		else:
-			toFile.write(pkgutil.get_data(
+			data = pkgutil.get_data(
 				__name__,
 				"templates/Dictionary.css",
-			))
+			)
+			if data is None:
+				raise RuntimeError("failed to load templates/Dictionary.css")
+			toFile.write(data)
 
 
 """
@@ -203,35 +223,35 @@ class Writer(object):
 	_clean_html: bool = True
 	_css: str = ""
 	_xsl: str = ""
-	_default_prefs: "Optional[Dict]" = None
+	_default_prefs: "Dict | None" = None
 	_prefs_html: str = ""
 	_front_back_matter: str = ""
 	_jing: bool = False
 	_indexes: str = ""  # FIXME: rename to indexes_lang?
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
-		self._dirname = None
+		self._dirname = ""
 
-	def finish(self):
-		self._dirname = None
+	def finish(self: "typing.Self") -> None:
+		self._dirname = ""
 
-	def open(self, dirname: str) -> None:
+	def open(self: "typing.Self", dirname: str) -> None:
 		self._dirname = dirname
 		if not isdir(dirname):
 			os.mkdir(dirname)
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		global BeautifulSoup
 		from pyglossary.xdxf_transform import XdxfTransformer
 
 		glos = self._glos
 		clean_html = self._clean_html
-		css = self._css
-		xsl = self._xsl
+		css: "str | None" = self._css
+		xsl: "str | None" = self._xsl
 		default_prefs = self._default_prefs
-		prefs_html = self._prefs_html
-		front_back_matter = self._front_back_matter
+		prefs_html: "str | None" = self._prefs_html
+		front_back_matter: "str | None" = self._front_back_matter
 		jing = self._jing
 		indexes = self._indexes
 
@@ -244,7 +264,7 @@ class Writer(object):
 				log.warning(
 					"clean_html option passed but BeautifulSoup not found. "
 					f"to fix this run "
-					f"`{pip} install lxml beautifulsoup4 html5lib`"
+					f"`{pip} install lxml beautifulsoup4 html5lib`",
 				)
 		else:
 			BeautifulSoup = None
@@ -280,7 +300,7 @@ class Writer(object):
 				defi = entry.defi
 
 				long_title = _normalize.title_long(
-					_normalize.title(word, BeautifulSoup)
+					_normalize.title(word, BeautifulSoup),
 				)
 				if not long_title:
 					continue
@@ -288,7 +308,7 @@ class Writer(object):
 				_id = next(generate_id)
 				quoted_title = quote_string(long_title, BeautifulSoup)
 
-				content_title = long_title
+				content_title: "str | None" = long_title
 				if entry.defiFormat == "x":
 					defi = xdxf_to_html.transformByInnerString(defi)
 					content_title = None
@@ -298,7 +318,7 @@ class Writer(object):
 					f'<d:entry id="{_id}" d:title={quoted_title}>\n' +
 					generate_indexes(long_title, alts, content, BeautifulSoup) +
 					content +
-					"\n</d:entry>\n"
+					"\n</d:entry>\n",
 				)
 
 			toFile.write("</d:dictionary>\n")
@@ -316,7 +336,7 @@ class Writer(object):
 				toStr(pkgutil.get_data(
 					__name__,
 					"templates/Makefile",
-				)).format(dict_name=fileNameBase)
+				)).format(dict_name=fileNameBase),
 			)
 
 		copyright = glos.getInfo("copyright")
@@ -324,7 +344,7 @@ class Writer(object):
 			# strip html tags
 			copyright = str(BeautifulSoup.BeautifulSoup(
 				copyright,
-				features="lxml"
+				features="lxml",
 			).text)
 
 		# if DCSDictionaryXSL provided but DCSDictionaryDefaultPrefs <dict/> not
@@ -355,7 +375,7 @@ class Writer(object):
 					DCSDictionaryDefaultPrefs=format_default_prefs(default_prefs),
 					DCSDictionaryPrefsHTML=basename(prefs_html) if prefs_html else "",
 					DCSDictionaryFrontMatterReferenceID=frontMatterReferenceID,
-				)
+				),
 			)
 
 		if jing:

@@ -17,27 +17,29 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
-from os.path import join, isfile
 import logging
+import typing
 from collections import OrderedDict
+from os.path import isfile, join
 
 from pyglossary.core import (
-	rootConfJsonFile,
-	confJsonFile,
-	rootDir,
-	dataDir,
 	appResDir,
+	confJsonFile,
+	dataDir,
+	rootConfJsonFile,
 )
+from pyglossary.entry_filters import entryFiltersRules
 from pyglossary.option import (
 	BoolOption,
-	StrOption,
-	IntOption,
 	FloatOption,
+	IntOption,
+	Option,
+	StrOption,
 )
-from pyglossary.glossary import Glossary
+from pyglossary.ui_type import UIType
 
 
-def fread(path):
+def fread(path: str) -> str:
 	with open(path, encoding="utf-8") as fp:
 		return fp.read()
 
@@ -48,18 +50,19 @@ aboutText = fread(join(dataDir, "about"))
 licenseText = fread(join(dataDir, "license-dialog"))
 authors = fread(join(dataDir, "AUTHORS")).split("\n")
 
-summary = "A tool for converting dictionary files aka glossaries with" \
+summary = (
+	"A tool for converting dictionary files aka glossaries with"
 	" various formats for different dictionary applications"
-
+)
 
 _entryFilterConfigDict = {
-	configRule[0]: (filterClass, configRule[1])
-	for configRule, filterClass in Glossary.entryFiltersRules
-	if configRule
+	configParam: (filterClass, default)
+	for configParam, default, filterClass in entryFiltersRules
+	if configParam
 }
 
 
-def getEntryFilterConfigPair(name: str) -> "Tuple[str, Option]":
+def getEntryFilterConfigPair(name: str) -> "tuple[str, Option]":
 	filterClass, default = _entryFilterConfigDict[name]
 	if isinstance(default, bool):
 		optClass = BoolOption
@@ -74,7 +77,7 @@ def getEntryFilterConfigPair(name: str) -> "Tuple[str, Option]":
 	)
 
 
-class UIBase(object):
+class UIBase(UIType):
 	configDefDict = OrderedDict([
 		("log_time", BoolOption(
 			hasFlag=True,
@@ -92,6 +95,12 @@ class UIBase(object):
 			comment=(
 				"Auto-enable --sqlite to limit RAM usage when direct\n"
 				"mode is not possible. Can override with --no-sqlite"
+			),
+		)),
+		("optimize_memory", BoolOption(
+			hasFlag=True,
+			comment=(
+				"Optimize memory usage (over speed) in --indirect mode"
 			),
 		)),
 
@@ -124,11 +133,11 @@ class UIBase(object):
 
 		("color.enable.cmd.unix", BoolOption(
 			hasFlag=False,
-			comment="Enable colors in Linux/Unix command line"
+			comment="Enable colors in Linux/Unix command line",
 		)),
 		("color.enable.cmd.windows", BoolOption(
 			hasFlag=False,
-			comment="Enable colors in Windows command line"
+			comment="Enable colors in Windows command line",
 		)),
 
 		("color.cmd.critical", IntOption(
@@ -167,23 +176,23 @@ class UIBase(object):
 		("remove_html", "remove_html_all"),
 	]
 
-	def __init__(self, **kwargs):
+	def __init__(self: "typing.Self", **kwargs) -> None:
 		self.config = {}
 
-	def progressInit(self, title):
+	def progressInit(self: "typing.Self", title: str) -> None:
 		pass
 
-	def progress(self, rat, text=""):
+	def progress(self: "typing.Self", rat: float, text: str = "") -> None:
 		pass
 
-	def progressEnd(self):
+	def progressEnd(self: "typing.Self") -> None:
 		self.progress(1.0)
 
 	def loadConfig(
-		self,
+		self: "typing.Self",
 		user: bool = True,
-		**options
-	):
+		**options,
+	) -> None:
 		from pyglossary.json_utils import jsonToData
 		data = jsonToData(fread(rootConfJsonFile))
 		if user and isfile(confJsonFile):
@@ -191,7 +200,7 @@ class UIBase(object):
 				userData = jsonToData(fread(confJsonFile))
 			except Exception:
 				log.exception(
-					f"error while loading user config file {confJsonFile!r}"
+					f"error while loading user config file {confJsonFile!r}",
 				)
 			else:
 				data.update(userData)
@@ -201,10 +210,10 @@ class UIBase(object):
 				self.config[key] = data.pop(key)
 			except KeyError:
 				pass
-		for key, value in data.items():
+		for key in data:
 			log.warning(
 				f"unknown config key {key!r}, you may edit {confJsonFile}"
-				" file and remove this key"
+				" file and remove this key",
 			)
 
 		for key, value in options.items():
@@ -214,9 +223,8 @@ class UIBase(object):
 		log.setTimeEnable(self.config["log_time"])
 
 		log.debug(f"loaded config: {self.config}")
-		return True
 
-	def saveConfig(self):
+	def saveConfig(self: "typing.Self") -> None:
 		from pyglossary.json_utils import dataToPrettyJson
 		config = OrderedDict()
 		for key, option in self.configDefDict.items():

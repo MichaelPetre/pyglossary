@@ -21,10 +21,28 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-from os import path
+import re
+import typing
+from typing import TYPE_CHECKING, Iterator, Sequence
 
-from pyglossary.plugins.formats_common import *
-from pyglossary.xdxf_transform import *
+if TYPE_CHECKING:
+	from lxml.etree import Element
+
+from pyglossary.compression import (
+	compressionOpen,
+	stdCompressions,
+)
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	Option,
+)
+from pyglossary.text_utils import toStr
+from pyglossary.xdxf_transform import (
+	XdxfTransformer,
+	XslXdxfTransformer,
+)
 
 enable = True
 lname = "xdxf"
@@ -39,10 +57,10 @@ website = (
 	"https://github.com/soshial/xdxf_makedict/tree/master/format_standard",
 	"XDXF standard - @soshial/xdxf_makedict",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"html": BoolOption(comment="Entries are HTML"),
 	"xsl": BoolOption(
-		comment="Use XSL transformation"
+		comment="Use XSL transformation",
 	),
 }
 
@@ -92,7 +110,7 @@ class Reader(object):
 		"full_title": "name",
 	}
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
 		self._file = None
@@ -102,7 +120,7 @@ class Reader(object):
 			'<span class="k">[^<>]*</span>(<br/>)?',
 		)
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		# <!DOCTYPE xdxf SYSTEM "http://xdxf.sourceforge.net/xdxf_lousy.dtd">
 		from lxml import etree as ET
 		self._filename = filename
@@ -121,7 +139,7 @@ class Reader(object):
 			cfile,
 			events=("end",),
 		)
-		for action, elem in context:
+		for _, elem in context:
 			if elem.tag in ("meta_info", "ar", "k", "abr", "dtrn"):
 				break
 			# every other tag before </meta_info> or </ar> is considered info
@@ -145,19 +163,19 @@ class Reader(object):
 			self._file.close()
 			self._file = compressionOpen(self._filename, mode="rb")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		return 0
 
-	def __iter__(self):
-		from lxml.etree import tostring
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		from lxml import etree as ET
+		from lxml.etree import tostring
 
 		context = ET.iterparse(
 			self._file,
 			events=("end",),
 			tag="ar",
 		)
-		for action, article in context:
+		for _, article in context:
 			article.tail = None
 			words = [toStr(w) for w in self.titles(article)]
 			if self._htmlTr:
@@ -182,12 +200,12 @@ class Reader(object):
 			while article.getprevious() is not None:
 				del article.getparent()[0]
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		if self._file:
 			self._file.close()
 			self._file = None
 
-	def read_metadata_old(self):
+	def read_metadata_old(self: "typing.Self") -> None:
 		full_name = self._xdxf.find("full_name").text
 		desc = self._xdxf.find("description").text
 		if full_name:
@@ -195,7 +213,7 @@ class Reader(object):
 		if desc:
 			self._glos.setInfo("description", desc)
 
-	def read_metadata_new(self):
+	def read_metadata_new(self: "typing.Self") -> None:
 		meta_info = self._xdxf.find("meta_info")
 		if meta_info is None:
 			raise ValueError("meta_info not found")
@@ -210,7 +228,10 @@ class Reader(object):
 		if desc:
 			self._glos.setInfo("description", desc)
 
-	def tostring(self, elem: "lxml.etree.Element") -> str:
+	def tostring(
+		self: "typing.Self",
+		elem: "Element",
+	) -> str:
 		from lxml import etree as ET
 		return ET.tostring(
 			elem,
@@ -218,14 +239,14 @@ class Reader(object):
 			pretty_print=True,
 		).decode("utf-8").strip()
 
-	def titles(self, article):
+	def titles(self: "typing.Self", article: "Element") -> "list[str]":
 		"""
 
 		:param article: <ar> tag
 		:return: (title (str) | None, alternative titles (set))
 		"""
 		from itertools import combinations
-		titles = []
+		titles: "list[str]" = []
 		for title_element in article.findall("k"):
 			if title_element.text is None:
 				# TODO: look for <opt> tag?
@@ -241,7 +262,11 @@ class Reader(object):
 
 		return titles
 
-	def _mktitle(self, title_element, include_opts=None):
+	def _mktitle(
+		self: "typing.Self",
+		title_element: "Element",
+		include_opts: "Sequence | None" = None,
+	) -> str:
 		if include_opts is None:
 			include_opts = ()
 		title = title_element.text

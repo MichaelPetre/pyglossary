@@ -19,8 +19,8 @@
 # GNU General Public License for more details.
 
 import logging
-import re
 import string
+from typing import Any, Callable, Iterator
 
 from . import _normalize
 
@@ -50,18 +50,18 @@ def id_generator() -> "Iterator[str]":
 		cnt += 1
 
 
-def quote_string(value: str, BeautifulSoup) -> str:
+def quote_string(value: str, BeautifulSoup: "Any") -> str:
 	if BeautifulSoup:
 		return BeautifulSoup.dammit.EntitySubstitution.substitute_xml(
 			value,
-			make_quoted_attribute=True
+			make_quoted_attribute=True,
 		)
 
 	return '"' + value.replace(">", "&gt;").replace('"', "&quot;") + '"'
 
 
 def indexes_generator(indexes_lang: str) -> """Callable[
-	[str, List[str], str, Any],
+	[str, list[str], str, Any],
 	str,
 ]""":
 	"""
@@ -74,20 +74,27 @@ def indexes_generator(indexes_lang: str) -> """Callable[
 		indexer = idxs.languages.get(indexes_lang, None)
 		if not indexer:
 			keys_str = ", ".join(list(idxs.languages.keys()))
-			msg = "extended indexes not supported for the" \
-				f" specified language: {indexes_lang}.\n" \
+			msg = (
+				"extended indexes not supported for the"
+				f" specified language: {indexes_lang}.\n"
 				f"following languages available: {keys_str}."
+			)
 			log.error(msg)
 			raise ValueError(msg)
 
-	def generate_indexes(title, alts, content, BeautifulSoup):
+	def generate_indexes(
+		title: str,
+		alts: "list[str]",
+		content: str,
+		BeautifulSoup: "Any",
+	) -> str:
 		indexes = [title]
 		indexes.extend(alts)
 
 		quoted_title = quote_string(title, BeautifulSoup)
 
 		if indexer:
-			indexes = set(indexer(indexes, content))
+			indexes = list(set(indexer(indexes, content)))
 
 		normal_indexes = set()
 		for idx in indexes:
@@ -96,11 +103,11 @@ def indexes_generator(indexes_lang: str) -> """Callable[
 			normal_indexes.add(_normalize.title_short(normal))
 		normal_indexes.discard(title)
 
-		normal_indexes = [s for s in normal_indexes if s.strip()]
-		# skip empty titles.  everything could happen.
-
 		s = f"<d:index d:value={quoted_title} d:title={quoted_title}/>"
 		for idx in normal_indexes:
+			if not idx.strip():
+				# skip empty titles. everything could happen.
+				continue
 			quoted_idx = quote_string(idx, BeautifulSoup)
 			s += f"<d:index d:value={quoted_idx} d:title={quoted_title}/>"
 		return s

@@ -1,3 +1,6 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
@@ -14,23 +17,22 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-
-from . import *
+from . import gtk
 from .utils import (
-	imageFromFile,
 	VBox,
+	imageFromFile,
 	pack,
 )
 
 
 class AboutTabTitleBox(gtk.Box):
-	def __init__(self, title: str, icon: str):
+	def __init__(self: "typing.Self", title: str, icon: str) -> None:
 		gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL)
 		self.set_spacing(10)
 		pack(self, VBox(), expand=0)
 		if icon:
 			image = imageFromFile(icon)
-			size = image.get_pixel_size()
+			image.get_pixel_size()
 			image.set_size_request(24, 24)
 			# I don't know how to stop Gtk from resizing the image
 			# I should probably use svg files to avoid blurry images
@@ -40,7 +42,7 @@ class AboutTabTitleBox(gtk.Box):
 		pack(self, VBox(), expand=0)
 		self.set_size_request(60, 60)
 
-	#def do_get_preferred_height_for_width(self, size: int) -> "Tuple[int, int]":
+	#def do_get_preferred_height_for_width(self, size: int) -> "tuple[int, int]":
 	#	height = int(size * 1.5)
 	#	return height, height
 
@@ -53,14 +55,14 @@ class AboutTabTitleBox(gtk.Box):
 
 class AboutWidget(gtk.Box):
 	def __init__(
-		self,
+		self: "typing.Self",
 		logo: str = "",
 		header: str = "",
 		about: str = "",
 		authors: str = "",
 		license: str = "",
 		**kwargs,
-	):
+	) -> None:
 		gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL)
 		self.set_spacing(15)
 		##
@@ -95,10 +97,10 @@ class AboutWidget(gtk.Box):
 
 	# <a href="...">Something</a> does not work with TextView
 	def newTabWidgetTextView(
-		self,
+		self: "typing.Self",
 		text: str,
 		wrap: bool = False,
-		justification: "Optional[gtk.Justification]" = None,
+		justification: "gtk.Justification | None" = None,
 	):
 		tv = gtk.TextView()
 		if wrap:
@@ -118,10 +120,10 @@ class AboutWidget(gtk.Box):
 		return swin
 
 	def newTabLabelWidget(
-		self,
+		self: "typing.Self",
 		text: str,
 		wrap: bool = False,
-		justification: "Optional[gtk.Justification]" = None,
+		justification: "gtk.Justification | None" = None,
 	):
 		box = VBox()
 		#box.set_border_width(10)
@@ -144,6 +146,5 @@ class AboutWidget(gtk.Box):
 		swin.set_child(box)
 		return swin
 
-	def newTabTitle(self, title: str, icon: str):
+	def newTabTitle(self: "typing.Self", title: str, icon: str):
 		return AboutTabTitleBox(title, icon)
-

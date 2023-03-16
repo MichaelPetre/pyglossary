@@ -1,6 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import io
+import typing
+from os.path import splitext
+from typing import Generator, Iterator
+
+from pyglossary.core import log
+from pyglossary.glossary_types import (
+	EntryType,
+	GlossaryType,
+)
+from pyglossary.option import Option
 
 enable = True
 lname = "info"
@@ -14,28 +24,29 @@ wiki = ""
 website = None
 
 # key is option/argument name, value is instance of Option
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}
 
 
 class Writer(object):
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
-		self._file = None
+		self._filename = ""
+		self._file: "io.IOBase | None" = None
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		self._file = open(filename, mode="wt", encoding="utf-8")
 
-	def finish(self):
-		self._filename = None
+	def finish(self: "typing.Self") -> None:
+		self._filename = ""
 		if self._file:
 			self._file.close()
 			self._file = None
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		import re
 		from collections import Counter, OrderedDict
+
 		from pyglossary.json_utils import dataToPrettyJson
 		from pyglossary.langs.writing_system import getWritingSystemFromText
 
@@ -53,13 +64,13 @@ class Writer(object):
 		wordCount = 0
 		bwordCount = 0
 
-		styleByTagCounter = Counter()
+		styleByTagCounter: "dict[str, int]" = Counter()
 
-		defiFormatCounter = Counter()
-		firstTagCounter = Counter()
-		allTagsCounter = Counter()
-		sourceScriptCounter = Counter()
-		dataEntryExtCounter = Counter()
+		defiFormatCounter: "dict[str, int]" = Counter()
+		firstTagCounter: "dict[str, int]" = Counter()
+		allTagsCounter: "dict[str, int]" = Counter()
+		sourceScriptCounter: "dict[str, int]" = Counter()
+		dataEntryExtCounter: "dict[str, int]" = Counter()
 
 		while True:
 			entry = yield
@@ -143,13 +154,13 @@ class Writer(object):
 
 
 class Reader(object):
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		pass
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		from pyglossary.json_utils import jsonToOrderedData
 
 		with open(filename, "r", encoding="utf-8") as infoFp:
@@ -157,8 +168,8 @@ class Reader(object):
 		for key, value in info.items():
 			self._glos.setInfo(key, value)
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		return 0
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType | None]":
 		yield None

@@ -1,19 +1,19 @@
 #!/usr/bin/python3
 
 import sys
-import json
-from os.path import join, dirname, abspath
-from pathlib import Path
-from pprint import pprint
 from collections import OrderedDict
-from mako.template import Template
+from os.path import abspath, dirname, join
+from pathlib import Path
+
 import toml
+from mako.template import Template
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from pyglossary.glossary import Glossary, defaultSortKeyName
 from pyglossary.core import userPluginsDir
+from pyglossary.glossary import Glossary
+from pyglossary.sort_keys import defaultSortKeyName
 
 Glossary.init(
 	# usePluginsJson=False,
@@ -127,7 +127,7 @@ def makeDependsDoc(cls):
 		for pypiName in cls.depends.values()
 	])
 	cmd = "pip3 install " + " ".join(
-		cls.depends.values()
+		cls.depends.values(),
 	)
 	return links, cmd
 
@@ -184,7 +184,7 @@ def renderRWOptions(options):
 				optionsComment[optName],
 			)
 			for optName, default in options.items()
-		]
+		],
 	)
 
 
@@ -240,7 +240,7 @@ for p in plugins:
 			try:
 				url, title = website
 			except ValueError:
-				raise ValueError(f"{website = }")
+				raise ValueError(f"{website = }") from None
 			website_md = renderLink(title, url)
 
 	(
@@ -257,7 +257,7 @@ for p in plugins:
 
 	toolsFile = join(toolsDir, f"{p.lname}.toml")
 	try:
-		with open(toolsFile) as _file:
+		with open(toolsFile, encoding="utf-8") as _file:
 			tools_toml = toml.load(_file, _dict=OrderedDict)
 	except FileNotFoundError:
 		tools = []
@@ -340,7 +340,12 @@ for p in plugins:
 		extraDocs=extraDocs,
 		toolsTable=toolsTable,
 	)
-	with open(join(rootDir, "doc", "p", f"{p.lname}.md"), mode="w") as _file:
+	with open(
+		join(rootDir, "doc", "p", f"{p.lname}.md"),
+		mode="w",
+		encoding="utf-8",
+		newline="\n",
+	) as _file:
 		_file.write(text)
 
 indexText = renderTable(
@@ -351,8 +356,13 @@ indexText = renderTable(
 			renderLink(f"{p.lname}.md", f"./{p.lname}.md"),
 		)
 		for p in plugins
-	]
+	],
 )
 
-with open(join(rootDir, "doc", "p", f"__index__.md"), mode="w") as _file:
+with open(
+	join(rootDir, "doc", "p", "__index__.md"),
+	mode="w",
+	encoding="utf-8",
+	newline="\n",
+) as _file:
 	_file.write(indexText + "\n")

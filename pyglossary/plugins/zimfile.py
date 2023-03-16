@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import os
+import typing
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+	from libzim.reader import Archive
+
+from pyglossary.core import cacheDir, log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import Option
 
 enable = True
 lname = "zim"
@@ -15,7 +24,7 @@ website = (
 	"https://wiki.openzim.org/wiki/OpenZIM",
 	"OpenZIM",
 )
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}
 
 # https://wiki.kiwix.org/wiki/Software
 
@@ -52,12 +61,12 @@ class Reader(object):
 		"application/font-woff",
 	}
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
-		self._zimfile = None
+		self._filename = ""
+		self._zimfile: "Archive | None" = None
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		try:
 			from libzim.reader import Archive
 		except ModuleNotFoundError as e:
@@ -67,19 +76,21 @@ class Reader(object):
 		self._filename = filename
 		self._zimfile = Archive(filename)
 
-	def close(self) -> None:
-		self._filename = None
+	def close(self: "typing.Self") -> None:
+		self._filename = ""
 		self._zimfile = None
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		if self._zimfile is None:
-			log.error(f"len(reader) called before reader.open()")
+			log.error("len(reader) called before reader.open()")
 			return 0
 		return self._zimfile.entry_count
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType | None]":
 		glos = self._glos
 		zimfile = self._zimfile
+		if zimfile is None:
+			return
 		emptyContentCount = 0
 		invalidMimeTypeCount = 0
 		entryCount = zimfile.entry_count

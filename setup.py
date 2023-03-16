@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import typing
+
 import glob
 import sys
 import os
@@ -18,7 +20,7 @@ relRootDir = "share/pyglossary"
 
 
 class my_install(install):
-	def run(self):
+	def run(self: "typing.Self"):
 		install.run(self)
 		if os.sep == "/":
 			binPath = join(self.install_scripts, "pyglossary")
@@ -93,7 +95,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
 	name="pyglossary",
 	version=VERSION,
-	python_requires=">=3.8.0",
+	python_requires=">=3.9.0",
 	cmdclass={
 		"install": my_install,
 	},

@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 
+import os
 import re
-from pyglossary.plugins.formats_common import *
-from pyglossary.file_utils import fileCountLines
+import typing
+from os.path import isdir, splitext
+from typing import Generator, Iterator
+
+from pyglossary.core import log
+from pyglossary.flags import DEFAULT_NO
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import BoolOption, Option
 from pyglossary.plugin_lib.dictdlib import DictDB
 
 enable = True
@@ -10,7 +17,7 @@ lname = "dict_org"
 format = "DictOrg"
 description = "DICT.org file format (.index)"
 extensions = (".index",)
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"dictzip": BoolOption(comment="Compress .dict file to .dict.dz"),
 	"install": BoolOption(comment="Install dictionary to /usr/share/dictd/"),
 }
@@ -55,17 +62,17 @@ def installToDictd(filename: str, dictzip: bool, title: str = "") -> None:
 	if subprocess.call(["/usr/sbin/dictdconfig", "-w"]) != 0:
 		log.error(
 			"failed to update /var/lib/dictd/db.list file"
-			", try manually running: sudo /usr/sbin/dictdconfig -w"
+			", try manually running: sudo /usr/sbin/dictdconfig -w",
 		)
 
 	log.info("don't forget to restart dictd server")
 
 
 class Reader(object):
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
-		self._dictdb = None  # type: Optional[DictDB]
+		self._dictdb: "DictDB | None" = None
 
 		# regular expression patterns used to prettify definition text
 		self._re_newline_in_braces = re.compile(
@@ -75,21 +82,19 @@ class Reader(object):
 			r'\{(?P<word>.+?)\}',
 		)
 
-	def open(self, filename: str) -> None:
-		import gzip
+	def open(self: "typing.Self", filename: str) -> None:
 		if filename.endswith(".index"):
 			filename = filename[:-6]
 		self._filename = filename
 		self._dictdb = DictDB(filename, "read", 1)
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		if self._dictdb is not None:
-			self._dictdb.indexfile.close()
-			self._dictdb.dictfile.close()
+			self._dictdb.close()
 			# self._dictdb.finish()
 			self._dictdb = None
 
-	def prettifyDefinitionText(self, defi: str) -> str:
+	def prettifyDefinitionText(self: "typing.Self", defi: str) -> str:
 		# Handle words in {}
 		# First, we remove any \n in {} pairs
 		defi = self._re_newline_in_braces.sub(r'{\g<left>\g<right>}', defi)
@@ -102,20 +107,19 @@ class Reader(object):
 		)
 
 		# Use <br /> so it can be rendered as newline correctly
-		defi = defi.replace("\n", "<br />")
-		return defi
+		return defi.replace("\n", "<br />")
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		if self._dictdb is None:
 			return 0
-		return len(self._dictdb.indexentries)
+		return len(self._dictdb)
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if self._dictdb is None:
 			raise RuntimeError("iterating over a reader while it's not open")
 		dictdb = self._dictdb
-		for word in dictdb.getdeflist():
-			b_defi = b"\n\n<hr>\n\n".join(dictdb.getdef(word))
+		for word in dictdb.getDefList():
+			b_defi = b"\n\n<hr>\n\n".join(dictdb.getDef(word))
 			try:
 				defi = b_defi.decode("utf_8", 'ignore')
 				defi = self.prettifyDefinitionText(defi)
@@ -129,12 +133,12 @@ class Writer(object):
 	_dictzip: bool = False
 	_install: bool = True
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 		self._dictdb = None
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		from pyglossary.os_utils import runDictzip
 		self._dictdb.finish(dosort=1)
 		if self._dictzip:
@@ -147,14 +151,14 @@ class Writer(object):
 			)
 		self._filename = None
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		filename_nox, ext = splitext(filename)
 		if ext.lower() == ".index":
 			filename = filename_nox
 		self._dictdb = DictDB(filename, "write", 1)
 		self._filename = filename
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		dictdb = self._dictdb
 		while True:
 			entry = yield
@@ -163,4 +167,4 @@ class Writer(object):
 			if entry.isData():
 				# does dictd support resources? and how? FIXME
 				continue
-			dictdb.addentry(entry.b_defi, entry.l_word)
+			dictdb.addEntry(entry.b_defi, entry.l_word)

@@ -1,5 +1,8 @@
+from pyglossary import Glossary
+
+
 def takePhonetic_oxford_gb(glos):
-	phonGlos = Glossary() ## phonetic glossary
+	phonGlos = Glossary()  # phonetic glossary
 	phonGlos.setInfo("name", glos.getInfo("name") + "_phonetic")
 	for entry in glos:
 		word = entry.s_word
@@ -23,9 +26,8 @@ def takePhonetic_oxford_gb(glos):
 			i = defi.find(s, 2, 85)
 			if i == -1:
 				continue
-			else:
-				ph = defi[:i + 1]
-				break
+			ph = defi[:i + 1]
+			break
 		ph = ph.replace(";", "\t")\
 			.replace(",", "\t")\
 			.replace("     ", "\t")\
@@ -37,7 +39,7 @@ def takePhonetic_oxford_gb(glos):
 			.replace("<i>US</i>", "\tUS: ")\
 			.replace("\t\t\t", "\t")\
 			.replace("\t\t", "\t")
-		#	.replace("/", "")
+		# 	.replace("/", "")
 		# 	.replace("\\n ", "\\n")
 		# 	.replace("\\n ", "\\n")
 		if ph != "":

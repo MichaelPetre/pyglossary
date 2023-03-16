@@ -1,28 +1,40 @@
-# -*- coding: utf-8 -*-
 
+import typing
+
+# -*- coding: utf-8 -*-
 from os.path import isfile
-from pyglossary.text_utils import (
-	splitByBar,
+from typing import TYPE_CHECKING
+
+from .core import log
+
+if TYPE_CHECKING:
+	import sqlite3
+	from typing import Generator, Iterator
+
+	from .glossary_types import EntryType, GlossaryType
+
+from .text_utils import (
 	joinByBar,
+	splitByBar,
 )
 
 
 class Writer(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ''
-		self._con = None
-		self._cur = None
+		self._con: "sqlite3.Connection | None"
+		self._cur: "sqlite3.Cursor | None"
 
-	def open(self, filename):
-		from sqlite3 import connect
+	def open(self: "typing.Self", filename: str) -> None:
+		import sqlite3
 		if isfile(filename):
 			raise IOError(f"file {filename!r} already exists")
 		self._filename = filename
-		self._con = connect(filename)
+		self._con = sqlite3.connect(filename)
 		self._cur = self._con.cursor()
 		self._con.execute(
 			"CREATE TABLE dict ("
@@ -31,13 +43,18 @@ class Writer(object):
 			"alts TEXT,"
 			"defi TEXT,"
 			"defiFormat CHAR(1),"
-			"bindata BLOB)"
+			"bindata BLOB)",
 		)
 		self._con.execute(
-			"CREATE INDEX dict_sortkey ON dict(wordlower, word);"
+			"CREATE INDEX dict_sortkey ON dict(wordlower, word);",
 		)
 
-	def write(self):
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+		con = self._con
+		cur = self._cur
+		if not (con and cur):
+			log.error(f"write: {con=}, {cur=}")
+			return
 		count = 0
 		while True:
 			entry = yield
@@ -50,7 +67,7 @@ class Writer(object):
 			bindata = None
 			if entry.isData():
 				bindata = entry.data
-			self._cur.execute(
+			cur.execute(
 				"insert into dict("
 				"word, wordlower, alts, "
 				"defi, defiFormat, bindata)"
@@ -62,11 +79,11 @@ class Writer(object):
 			)
 			count += 1
 			if count % 1000 == 0:
-				self._con.commit()
+				con.commit()
 
-		self._con.commit()
+		con.commit()
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:
@@ -75,30 +92,34 @@ class Writer(object):
 
 
 class Reader(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
-		self._filename = ''
-		self._con = None
-		self._cur = None
+	def _clear(self: "typing.Self") -> None:
+		self._filename = ""
+		self._con: "sqlite3.Connection | None"
+		self._cur: "sqlite3.Cursor | None"
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		from sqlite3 import connect
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		# self._glos.setDefaultDefiFormat("m")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
+		if self._cur is None:
+			return 0
 		self._cur.execute("select count(*) from dict")
 		return self._cur.fetchone()[0]
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+		if self._cur is None:
+			return
 		self._cur.execute(
 			"select word, alts, defi, defiFormat from dict"
-			" order by wordlower, word"
+			" order by wordlower, word",
 		)
 		for row in self._cur:
 			words = [row[0]] + splitByBar(row[1])
@@ -106,7 +127,7 @@ class Reader(object):
 			defiFormat = row[3]
 			yield self._glos.newEntry(words, defi, defiFormat=defiFormat)
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

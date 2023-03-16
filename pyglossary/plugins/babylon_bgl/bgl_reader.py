@@ -21,11 +21,15 @@
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
 import io
-import gzip
+import os
 import re
+import sys
+import typing
 from collections import OrderedDict as odict
+from typing import Iterator
 
-from pyglossary.plugins.formats_common import *  # FIXME
+from pyglossary.core import log
+
 try:
 	vmajor, vminor = sys.version_info[:2]
 	GzipFile = __import__(
@@ -34,30 +38,37 @@ try:
 	).GzipFile
 except ImportError as e:
 	from gzip import GzipFile
-	log.warning(str(e))
+	log.debug(str(e))
 
-from pyglossary.text_utils import (
-	uintFromBytes,
-	excMessage,
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	HtmlColorOption,
+	Option,
+	StrOption,
 )
-
+from pyglossary.text_utils import (
+	excMessage,
+	uintFromBytes,
+)
 from pyglossary.xml_utils import xml_escape
 
 from .bgl_info import (
-	infoType3ByCode,
 	charsetInfoDecode,
+	infoType3ByCode,
 )
 from .bgl_pos import partOfSpeechByCode
 from .bgl_text import (
-	replaceHtmlEntries,
-	replaceHtmlEntriesInKeys,
-	stripHtmlTags,
+	fixImgLinks,
+	normalizeNewlines,
 	removeControlChars,
 	removeNewlines,
-	normalizeNewlines,
 	replaceAsciiCharRefs,
-	fixImgLinks,
+	replaceHtmlEntries,
+	replaceHtmlEntriesInKeys,
 	stripDollarIndexes,
+	stripHtmlTags,
 	unknownHtmlEntries,
 )
 
@@ -73,7 +84,7 @@ debugReadOptions = {
 	"unpacked_gzip_path",  # str, file path
 }
 
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"default_encoding_overwrite": EncodingOption(
 		comment="Default encoding (overwrite)",
 	),
@@ -131,13 +142,13 @@ optionsProp = {
 
 
 if os.sep == "/":  # Operating system is Unix-like
-	tmpDir = "/tmp"
+	tmpDir = "/tmp"  # noqa: S108
 elif os.sep == "\\":  # Operating system is ms-windows
 	tmpDir = os.getenv("TEMP")
 else:
 	raise RuntimeError(
 		f"Unknown path separator(os.sep=={os.sep!r})"
-		f"What is your operating system?"
+		f"What is your operating system?",
 	)
 
 re_charset_decode = re.compile(
@@ -156,29 +167,31 @@ class BGLGzipFile(GzipFile):
 	Some dictionaries do not use CRC code, it is set to 0.
 	"""
 	def __init__(
-		self,
-		fileobj=None,
-		closeFileobj=False,
-		**kwargs
-	):
+		self: "typing.Self",
+		fileobj: "io.IOBase | None" = None,
+		closeFileobj: bool = False,
+		**kwargs,
+	) -> None:
 		GzipFile.__init__(self, fileobj=fileobj, **kwargs)
 		self.closeFileobj = closeFileobj
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self.closeFileobj:
 			self.fileobj.close()
 
 
 class Block(object):
-	def __init__(self):
+	def __init__(self: "typing.Self") -> None:
 		self.data = b""
 		self.type = ""
 		# block offset in the gzip stream, for debugging
 		self.offset = -1
 
-	def __str__(self):
-		return f"Block type={self.type}, length={self.length}, " \
+	def __str__(self: "typing.Self") -> str:
+		return (
+			f"Block type={self.type}, length={self.length}, "
 			f"len(data)={len(self.data)}"
+		)
 
 
 class FileOffS(file):
@@ -190,17 +203,17 @@ class FileOffS(file):
 	file. offset parameter of the constructor specifies the offset of the first
 	byte of the modeled file.
 	"""
-	def __init__(self, filename, offset=0):
-		fileObj = open(filename, "rb")
+	def __init__(self: "typing.Self", filename: str, offset: int = 0) -> None:
+		fileObj = open(filename, "rb")  # noqa: SIM115
 		file.__init__(self, fileObj)
 		self._fileObj = fileObj
 		self.offset = offset
 		file.seek(self, offset)  # OR self.seek(0)
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		self._fileObj.close()
 
-	def seek(self, pos, whence=0):  # position, whence
+	def seek(self: "typing.Self", pos: int, whence: int = 0) -> None:
 		if whence == 0:  # relative to start of file
 			file.seek(
 				self,
@@ -214,14 +227,14 @@ class FileOffS(file):
 					self.offset,
 					self.tell() + pos,
 				),
-				0
+				0,
 			)
 		elif whence == 2:  # relative to end of file
 			file.seek(self, pos, 2)
 		else:
 			raise ValueError(f"FileOffS.seek: bad whence={whence}")
 
-	def tell(self):
+	def tell(self: "typing.Self") -> int:
 		return file.tell(self) - self.offset
 
 
@@ -237,7 +250,7 @@ class DefinitionFields(object):
 	"""
 	# nameByCode = {
 	# }
-	def __init__(self):
+	def __init__(self: "typing.Self") -> None:
 		# self.bytesByCode = {}
 		# self.strByCode = {}
 
@@ -323,7 +336,7 @@ class BglReader(object):
 	selected encoding, so the user may fix the encoding if needed.
 	"""
 
-	def __init__(self, glos):  # no more arguments
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:  # no more arguments
 		self._glos = glos
 		self._filename = ""
 		self.info = odict()
@@ -357,7 +370,7 @@ class BglReader(object):
 		# must be a in RRGGBB format
 		self.iconDataList = []
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		if self.numEntries is None:
 			log.warning("len(reader) called while numEntries=None")
 			return 0
@@ -366,27 +379,25 @@ class BglReader(object):
 	# open .bgl file, read signature, find and open gzipped content
 	# self.file - ungzipped content
 	def open(
-		self,
-		filename,
-	):
+		self: "typing.Self",
+		filename: str,
+	) -> None:
 		self._filename = filename
 
 		if not self.openGzip():
-			return False
+			raise IOError("BGL: failed to read gzip header")
 
 		self.readInfo()
 		self.setGlossaryInfo()
 
-		return True
-
-	def openGzip(self):
+	def openGzip(self: "typing.Self") -> None:
 		with open(self._filename, "rb") as bglFile:
 			if not bglFile:
 				log.error(f"file pointer empty: {bglFile}")
 				return False
 			b_head = bglFile.read(6)
 
-		if len(b_head) < 6 or not b_head[:4] in (
+		if len(b_head) < 6 or b_head[:4] not in (
 			b"\x12\x34\x00\x01",
 			b"\x12\x34\x00\x02",
 		):
@@ -407,7 +418,7 @@ class BglReader(object):
 
 		return True
 
-	def readInfo(self):
+	def readInfo(self: "typing.Self") -> None:
 		"""
 		read meta information about the dictionary: author, description,
 		source and target languages, etc (articles are not read)
@@ -434,7 +445,7 @@ class BglReader(object):
 				log.debug(
 					f"Unknown Block type {block.type!r}"
 					f", data_length = {len(block.data)}"
-					f", number = {self.numBlocks}"
+					f", number = {self.numBlocks}",
 				)
 		self.file.seek(0)
 
@@ -449,7 +460,7 @@ class BglReader(object):
 			# we've read.
 			log.warning(
 				f"bgl_numEntries={self.bgl_numEntries}"
-				f", numEntries={self.numEntries}"
+				f", numEntries={self.numEntries}",
 			)
 
 		self.numBlocks = 0
@@ -464,7 +475,7 @@ class BglReader(object):
 				else:
 					self.info[key] = value
 
-	def setGlossaryInfo(self):
+	def setGlossaryInfo(self: "typing.Self") -> None:
 		glos = self._glos
 		###
 		if self.sourceLang:
@@ -491,10 +502,9 @@ class BglReader(object):
 		glos.setInfo("sourceCharset", "UTF-8")
 		glos.setInfo("targetCharset", "UTF-8")
 		###
-		if "lastUpdated" not in self.info:
-			if "bgl_firstUpdated" in self.info:
-				log.debug(f"replacing bgl_firstUpdated with lastUpdated")
-				self.info["lastUpdated"] = self.info.pop("bgl_firstUpdated")
+		if "lastUpdated" not in self.info and "bgl_firstUpdated" in self.info:
+			log.debug("replacing bgl_firstUpdated with lastUpdated")
+			self.info["lastUpdated"] = self.info.pop("bgl_firstUpdated")
 		###
 		for key, value in self.info.items():
 			if value == "":
@@ -510,7 +520,7 @@ class BglReader(object):
 			except Exception:
 				log.exception(f"key = {key}")
 
-	def isEndOfDictData(self):
+	def isEndOfDictData(self: "typing.Self") -> bool:
 		"""
 			Test for end of dictionary data.
 
@@ -536,19 +546,19 @@ class BglReader(object):
 		"""
 		return False
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self.file:
 			self.file.close()
 			self.file = None
 
-	def __del__(self):
+	def __del__(self: "typing.Self") -> None:
 		self.close()
 		while unknownHtmlEntries:
 			entity = unknownHtmlEntries.pop()
 			log.debug(f"BGL: unknown html entity: {entity}")
 
 	# returns False if error
-	def readBlock(self, block):
+	def readBlock(self: "typing.Self", block: "Block") -> bool:
 		block.offset = self.file.tell()
 		length = self.readBytes(1)
 		if length == -1:
@@ -574,7 +584,7 @@ class BglReader(object):
 					f"failed to read block data"
 					f": numBlocks={self.numBlocks}"
 					f", length={length}"
-					f", filePos={self.file.tell()}"
+					f", filePos={self.file.tell()}",
 				)
 				block.data = b""
 				return False
@@ -582,7 +592,7 @@ class BglReader(object):
 			block.data = b""
 		return True
 
-	def readBytes(self, num):
+	def readBytes(self: "typing.Self", num: int) -> int:
 		"""
 			return -1 if error
 		"""
@@ -597,18 +607,19 @@ class BglReader(object):
 		if len(buf) != num:
 			log.error(
 				f"readBytes: expected to read {num} bytes"
-				f", but found {len(buf)} bytes"
+				f", but found {len(buf)} bytes",
 			)
 			return -1
 		return uintFromBytes(buf)
 
-	def readType0(self, block):
+	def readType0(self: "typing.Self", block: "Block") -> bool:
 		code = block.data[0]
 		if code == 2:
 			# this number is vary close to self.bgl_numEntries,
 			# but does not always equal to the number of entries
 			# see self.readType3, code == 12 as well
-			num = uintFromBytes(block.data[1:])
+			# num = uintFromBytes(block.data[1:])
+			pass
 		elif code == 8:
 			self.defaultCharset = charsetInfoDecode(block.data[1:])
 			if not self.defaultCharset:
@@ -618,7 +629,7 @@ class BglReader(object):
 			return False
 		return True
 
-	def readType2(self, block):
+	def readType2(self: "typing.Self", block: "Block") -> "EntryType | None":
 		"""
 		Process type 2 block
 
@@ -644,14 +655,13 @@ class BglReader(object):
 			and None if failed
 		"""
 		# Embedded File (mostly Image or HTML)
-		name = ""  # Embedded file name
 		pos = 0
 		# name:
 		Len = block.data[pos]
 		pos += 1
 		if pos + Len > len(block.data):
 			log.warning("reading block type 2: name too long")
-			return
+			return None
 		b_name = block.data[pos:pos + Len]
 		pos += Len
 		b_data = block.data[pos:]
@@ -664,7 +674,7 @@ class BglReader(object):
 			b_data,
 		)
 
-	def readType3(self, block):
+	def readType3(self: "typing.Self", block: "Block") -> None:
 		"""
 			reads block with type 3, and updates self.info
 			returns None
@@ -711,7 +721,7 @@ class BglReader(object):
 
 		self.info[key] = value
 
-	def detectEncoding(self):
+	def detectEncoding(self: "typing.Self") -> None:
 		"""
 			assign self.sourceEncoding and self.targetEncoding
 		"""
@@ -746,14 +756,14 @@ class BglReader(object):
 		else:
 			self.targetEncoding = self.defaultEncoding
 
-	def logUnknownBlock(self, block):
+	def logUnknownBlock(self: "typing.Self", block: "Block") -> None:
 		log.debug(
 			f"Unknown block: type={block.type}"
 			f", number={self.numBlocks}"
-			f", data={block.data!r}"
+			f", data={block.data!r}",
 		)
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if not self.file:
 			raise RuntimeError("iterating over a reader while it's not open")
 
@@ -808,7 +818,11 @@ class BglReader(object):
 					u_defi,
 				)
 
-	def readEntryWord(self, block, pos):
+	def readEntryWord(
+		self: "typing.Self",
+		block: "Block",
+		pos: int,
+	) -> "tuple[bool, int | None, bytes | None, bytes | None]":
 		"""
 			Read word part of entry.
 
@@ -822,7 +836,7 @@ class BglReader(object):
 		if pos + 1 > len(block.data):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
-				f", reading word size: pos + 1 > len(block.data)"
+				f", reading word size: pos + 1 > len(block.data)",
 			)
 			return Err
 		Len = block.data[pos]
@@ -831,7 +845,7 @@ class BglReader(object):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
 				f", block.type={block.type}"
-				f", reading word: pos + Len > len(block.data)"
+				f", reading word: pos + Len > len(block.data)",
 			)
 			return Err
 		b_word = block.data[pos:pos + Len]
@@ -852,7 +866,12 @@ class BglReader(object):
 		self.wordLenMax = max(self.wordLenMax, len(u_word))
 		return True, pos, u_word.strip(), b_word.strip()
 
-	def readEntryDefi(self, block, pos, b_word):
+	def readEntryDefi(
+		self: "typing.Self",
+		block: "Block",
+		pos: int,
+		b_word: bytes,
+	) -> "tuple[bool, int | None, bytes | None, bytes | None]":
 		"""
 		Read defi part of entry.
 
@@ -866,7 +885,7 @@ class BglReader(object):
 		if pos + 2 > len(block.data):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
-				f", reading defi size: pos + 2 > len(block.data)"
+				f", reading defi size: pos + 2 > len(block.data)",
 			)
 			return Err
 		Len = uintFromBytes(block.data[pos:pos + 2])
@@ -875,7 +894,7 @@ class BglReader(object):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
 				f", block.type={block.type}"
-				f", reading defi: pos + Len > len(block.data)"
+				f", reading defi: pos + Len > len(block.data)",
 			)
 			return Err
 		b_defi = block.data[pos:pos + Len]
@@ -885,7 +904,13 @@ class BglReader(object):
 		pos += Len
 		return True, pos, u_defi, b_defi
 
-	def readEntryAlts(self, block, pos, b_word, u_word):
+	def readEntryAlts(
+		self: "typing.Self",
+		block: "Block",
+		pos: int,
+		b_word: bytes,
+		u_word: str,
+	) -> "tuple[bool, int | None, list[str] | None]":
 		"""
 		returns:
 			(False, None, None) if error
@@ -899,7 +924,7 @@ class BglReader(object):
 			if pos + 1 > len(block.data):
 				log.error(
 					f"reading block offset={block.offset:#02x}"
-					f", reading alt size: pos + 1 > len(block.data)"
+					f", reading alt size: pos + 1 > len(block.data)",
 				)
 				return Err
 			Len = block.data[pos]
@@ -908,7 +933,7 @@ class BglReader(object):
 				log.error(
 					f"reading block offset={block.offset:#02x}"
 					f", block.type={block.type}"
-					f", reading alt: pos + Len > len(block.data)"
+					f", reading alt: pos + Len > len(block.data)",
 				)
 				return Err
 			b_alt = block.data[pos:pos + Len]
@@ -921,7 +946,10 @@ class BglReader(object):
 			u_alts.remove(u_word)
 		return True, pos, list(sorted(u_alts))
 
-	def readEntry_Type11(self, block):
+	def readEntry_Type11(
+		self: "typing.Self",
+		block: "Block",
+	) -> "tuple[bool, str | None, list[str] | None, str | None]":
 		"""return (succeed, u_word, u_alts, u_defi)"""
 		Err = (False, None, None, None)
 		pos = 0
@@ -930,7 +958,7 @@ class BglReader(object):
 		if pos + 5 > len(block.data):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
-				f", reading word size: pos + 5 > len(block.data)"
+				f", reading word size: pos + 5 > len(block.data)",
 			)
 			return Err
 		wordLen = uintFromBytes(block.data[pos:pos + 5])
@@ -939,7 +967,7 @@ class BglReader(object):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
 				f", block.type={block.type}"
-				f", reading word: pos + wordLen > len(block.data)"
+				f", reading word: pos + wordLen > len(block.data)",
 			)
 			return Err
 		b_word = block.data[pos:pos + wordLen]
@@ -951,7 +979,7 @@ class BglReader(object):
 		if pos + 4 > len(block.data):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
-				f", reading defi size: pos + 4 > len(block.data)"
+				f", reading defi size: pos + 4 > len(block.data)",
 			)
 			return Err
 		altsCount = uintFromBytes(block.data[pos:pos + 4])
@@ -960,11 +988,11 @@ class BglReader(object):
 		# reading alts
 		# use set instead of list to prevent duplicates
 		u_alts = set()
-		for altIndex in range(altsCount):
+		for _ in range(altsCount):
 			if pos + 4 > len(block.data):
 				log.error(
 					f"reading block offset={block.offset:#02x}"
-					f", reading alt size: pos + 4 > len(block.data)"
+					f", reading alt size: pos + 4 > len(block.data)",
 				)
 				return Err
 			altLen = uintFromBytes(block.data[pos:pos + 4])
@@ -974,14 +1002,14 @@ class BglReader(object):
 					# no evidence
 					log.warning(
 						f"reading block offset={block.offset:#02x}"
-						f", reading alt size: pos + altLen != len(block.data)"
+						f", reading alt size: pos + altLen != len(block.data)",
 					)
 				break
 			if pos + altLen > len(block.data):
 				log.error(
 					f"reading block offset={block.offset:#02x}"
 					f", block.type={block.type}"
-					f", reading alt: pos + altLen > len(block.data)"
+					f", reading alt: pos + altLen > len(block.data)",
 				)
 				return Err
 			b_alt = block.data[pos:pos + altLen]
@@ -1001,7 +1029,7 @@ class BglReader(object):
 			log.error(
 				f"reading block offset={block.offset:#02x}"
 				f", block.type={block.type}"
-				f", reading defi: pos + defiLen > len(block.data)"
+				f", reading defi: pos + defiLen > len(block.data)",
 			)
 			return Err
 		b_defi = block.data[pos:pos + defiLen]
@@ -1011,10 +1039,14 @@ class BglReader(object):
 
 		return True, u_word, u_alts, u_defi
 
-	def charReferencesStat(self, b_text, encoding):
+	def charReferencesStat(self: "typing.Self", b_text: bytes, encoding: str) -> None:
 		pass
 
-	def decodeCharsetTags(self, b_text, defaultEncoding):
+	def decodeCharsetTags(
+		self: "typing.Self",
+		b_text: bytes,
+		defaultEncoding: str,
+	) -> "tuple[str, str]":
 		"""
 		b_text is a bytes
 		Decode html text taking into account charset tags and default encoding
@@ -1041,14 +1073,14 @@ class BglReader(object):
 								log.debug(
 									f"decoding charset tags, b_text={b_text!r}"
 									f"\nblank <charset c=t> character"
-									f" reference ({b_text2!r})\n"
+									f" reference ({b_text2!r})\n",
 								)
 							continue
 						if not re_b_reference.match(b_ref):
 							log.debug(
 								f"decoding charset tags, b_text={b_text!r}"
 								f"\ninvalid <charset c=t> character"
-								f" reference ({b_text2!r})\n"
+								f" reference ({b_text2!r})\n",
 							)
 							continue
 						u_text += chr(int(b_ref, 16))
@@ -1063,9 +1095,9 @@ class BglReader(object):
 							log.debug(
 								f"decoding charset tags, b_text={b_text!r}"
 								f"\nfragment: {b_text2!r}"
-								f"\nconversion error:\n" + excMessage()
+								f"\nconversion error:\n" + excMessage(),
 							)
-							u_text2 = text2.decode(encoding, "replace")
+							u_text2 = b_text2.decode(encoding, "replace")
 					else:
 						u_text2 = b_text2.decode(encoding, "replace")
 					u_text += u_text2
@@ -1079,7 +1111,7 @@ class BglReader(object):
 					else:
 						log.debug(
 							f"decoding charset tags, b_text={b_text!r}"
-							f"\nunbalanced </charset> tag\n"
+							f"\nunbalanced </charset> tag\n",
 						)
 				else:
 					# <charset c="?">
@@ -1100,7 +1132,7 @@ class BglReader(object):
 					else:
 						log.debug(
 							f"decoding charset tags, text = {b_text!r}"
-							f"\nunknown charset code = {ord(b_type):#02x}\n"
+							f"\nunknown charset code = {ord(b_type):#02x}\n",
 						)
 						# add any encoding to prevent
 						# "unbalanced </charset> tag" error
@@ -1111,11 +1143,11 @@ class BglReader(object):
 		if encodings:
 			log.debug(
 				f"decoding charset tags, text={b_text}"
-				f"\nunclosed <charset...> tag\n"
+				f"\nunclosed <charset...> tag\n",
 			)
 		return u_text, defaultEncodingOnly
 
-	def processKey(self, b_word):
+	def processKey(self: "typing.Self", b_word: bytes) -> str:
 		"""
 			b_word is a bytes instance
 			returns u_word_main, as str instance (utf-8 encoding)
@@ -1132,7 +1164,7 @@ class BglReader(object):
 				u_word_main = b_word_main.decode(self.sourceEncoding)
 			except UnicodeError:
 				log.debug(
-					f"processKey({b_word}):\nconversion error:\n" + excMessage()
+					f"processKey({b_word}):\nconversion error:\n" + excMessage(),
 				)
 				u_word_main = b_word_main.decode(
 					self.sourceEncoding,
@@ -1155,7 +1187,7 @@ class BglReader(object):
 			u_word_main = u_word_main.rstrip(self._key_rstrip_chars)
 		return u_word_main
 
-	def processAlternativeKey(self, b_word, b_key):
+	def processAlternativeKey(self: "typing.Self", b_word: bytes, b_key: bytes) -> str:
 		"""
 			b_word is a bytes instance
 			returns u_word_main, as str instance (utf-8 encoding)
@@ -1168,7 +1200,7 @@ class BglReader(object):
 			except UnicodeError:
 				log.debug(
 					f"processAlternativeKey({b_word})\nkey = {b_key}"
-					f":\nconversion error:\n" + excMessage()
+					f":\nconversion error:\n" + excMessage(),
 				)
 				u_word_main = b_word_main.decode(self.sourceEncoding, "ignore")
 		else:
@@ -1193,7 +1225,7 @@ class BglReader(object):
 		u_word_main = u_word_main.rstrip(self._key_rstrip_chars)
 		return u_word_main
 
-	def processDefi(self, b_defi, b_key):
+	def processDefi(self: "typing.Self", b_defi: bytes, b_key: bytes) -> str:
 		"""
 		b_defi: bytes
 		b_key: bytes
@@ -1260,7 +1292,7 @@ class BglReader(object):
 				log.debug(
 					f"processDefi({b_defi})\nb_key = {b_key}"
 					f":\ndefi field 50"
-					f", unknown code: {fields.code_transcription_50:#02x}"
+					f", unknown code: {fields.code_transcription_50:#02x}",
 				)
 
 		if fields.b_transcription_60:
@@ -1278,7 +1310,7 @@ class BglReader(object):
 				log.debug(
 					f"processDefi({b_defi})\nb_key = {b_key}"
 					f":\ndefi field 60"
-					f", unknown code: {fields.code_transcription_60:#02x}"
+					f", unknown code: {fields.code_transcription_60:#02x}",
 				)
 
 		if fields.b_field_1a:
@@ -1310,15 +1342,17 @@ class BglReader(object):
 		if fields.u_defi:
 			u_defi_format += fields.u_defi
 
-		if u_defi_format.endswith(("<br>", "<BR>")):
-			u_defi_format = u_defi_format[:-4]
+		return u_defi_format.removesuffix("<br>").removesuffix("<BR>")
 
-		return u_defi_format
-
-	def processDefiStat(self, fields, b_defi, b_key):
+	def processDefiStat(
+		self: "typing.Self",
+		fields: DefinitionFields,
+		b_defi: bytes,
+		b_key: bytes,
+	) -> None:
 		pass
 
-	def findDefiFieldsStart(self, b_defi):
+	def findDefiFieldsStart(self: "typing.Self", b_defi: bytes) -> int:
 		"""
 		b_defi is a bytes instance
 
@@ -1349,7 +1383,12 @@ class BglReader(object):
 				break
 		return index
 
-	def collectDefiFields(self, b_defi, b_key, fields):
+	def collectDefiFields(
+		self: "typing.Self",
+		b_defi: bytes,
+		b_key: bytes,
+		fields: DefinitionFields,
+	) -> None:
 		"""
 		entry definition structure:
 		<main definition>['\x14'[{field_code}{field_data}]*]
@@ -1381,7 +1420,7 @@ class BglReader(object):
 				if i + 1 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nb_defi ends after \\x02"
+						f"\nb_key = {b_key!r}:\nb_defi ends after \\x02",
 					)
 					return
 
@@ -1393,7 +1432,7 @@ class BglReader(object):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
 						f"\nb_key = {b_key!r}"
-						f":\nunknown part of speech code = {posCode:#02x}"
+						f":\nunknown part of speech code = {posCode:#02x}",
 					)
 					return
 				i += 2
@@ -1401,12 +1440,12 @@ class BglReader(object):
 				if fields.b_field_06:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nduplicate type 6"
+						f"\nb_key = {b_key!r}:\nduplicate type 6",
 					)
 				if i + 1 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nb_defi ends after \\x06"
+						f"\nb_key = {b_key!r}:\nb_defi ends after \\x06",
 					)
 					return
 				fields.b_field_06 = b_defi[i + 1]
@@ -1416,7 +1455,7 @@ class BglReader(object):
 				if i + 3 > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x07"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x07",
 					)
 					return
 				fields.b_field_07 = b_defi[i + 1:i + 3]
@@ -1430,7 +1469,7 @@ class BglReader(object):
 				if i + 1 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x13"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x13",
 					)
 					return
 				Len = b_defi[i + 1]
@@ -1438,13 +1477,13 @@ class BglReader(object):
 				if Len == 0:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}\n"
-						f"b_key = {b_key!r}:\nblank data after \\x13"
+						f"b_key = {b_key!r}:\nblank data after \\x13",
 					)
 					continue
 				if i + Len > len(b_defi):
 					log.debug(
-						f"collecting definition fields, b_defi = {b_defi!r}\n" +
-						f"b_key = {b_key!r}:\ntoo few data after \\x13"
+						f"collecting definition fields, b_defi = {b_defi!r}\n"
+						f"b_key = {b_key!r}:\ntoo few data after \\x13",
 					)
 					return
 				fields.b_field_13 = b_defi[i:i + Len]
@@ -1454,12 +1493,12 @@ class BglReader(object):
 				if fields.b_title:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"b_key = {b_key!r}:\nduplicate entry title item"
+						f"b_key = {b_key!r}:\nduplicate entry title item",
 					)
 				if i + 1 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}\n"
-						f"b_key = {b_key!r}:\nb_defi ends after \\x18"
+						f"b_key = {b_key!r}:\nb_defi ends after \\x18",
 					)
 					return
 				i += 1
@@ -1474,7 +1513,7 @@ class BglReader(object):
 				if i + Len > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}\n"
-						f"b_key = {b_key!r}:\ntitle is too long"
+						f"b_key = {b_key!r}:\ntitle is too long",
 					)
 					return
 				fields.b_title = b_defi[i:i + Len]
@@ -1484,7 +1523,7 @@ class BglReader(object):
 				if i + 1 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key}:\ntoo few data after \\x1a"
+						f"\nb_key = {b_key}:\ntoo few data after \\x1a",
 					)
 					return
 				Len = b_defi[i + 1]
@@ -1492,13 +1531,13 @@ class BglReader(object):
 				if Len == 0:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nblank data after \\x1a"
+						f"\nb_key = {b_key!r}:\nblank data after \\x1a",
 					)
 					continue
 				if i + Len > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x1a"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x1a",
 					)
 					return
 				fields.b_field_1a = b_defi[i:i + Len]
@@ -1508,7 +1547,7 @@ class BglReader(object):
 				if i + 2 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x28"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x28",
 					)
 					return
 				i += 1
@@ -1517,13 +1556,13 @@ class BglReader(object):
 				if Len == 0:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nblank data after \\x28"
+						f"\nb_key = {b_key!r}:\nblank data after \\x28",
 					)
 					continue
 				if i + Len > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x28"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x28",
 					)
 					return
 				fields.b_title_trans = b_defi[i:i + Len]
@@ -1539,21 +1578,21 @@ class BglReader(object):
 				if i + 2 + Len > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x40+"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x40+",
 					)
 					return
 				i += 2
 				b_text = b_defi[i:i + Len]
 				i += Len
 				log.debug(
-					f"unknown definition field {code:#02x}, b_text={b_text!r}"
+					f"unknown definition field {code:#02x}, b_text={b_text!r}",
 				)
 			elif b_defi[i] == 0x50:
 				# \x50 <one byte> <one byte - length><data>
 				if i + 2 >= len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x50"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x50",
 					)
 					return
 				fields.code_transcription_50 = b_defi[i + 1]
@@ -1562,13 +1601,13 @@ class BglReader(object):
 				if Len == 0:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nblank data after \\x50"
+						f"\nb_key = {b_key!r}:\nblank data after \\x50",
 					)
 					continue
 				if i + Len > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x50"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x50",
 					)
 					return
 				fields.b_transcription_50 = b_defi[i:i + Len]
@@ -1578,7 +1617,7 @@ class BglReader(object):
 				if i + 4 > len(b_defi):
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x60"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x60",
 					)
 					return
 				fields.code_transcription_60 = b_defi[i + 1]
@@ -1588,13 +1627,13 @@ class BglReader(object):
 				if Len == 0:
 					log.debug(
 						f"collecting definition fields, b_defi = {b_defi!r}"
-						f"\nb_key = {b_key!r}:\nblank data after \\x60"
+						f"\nb_key = {b_key!r}:\nblank data after \\x60",
 					)
 					continue
 				if i + Len > len(b_defi):
 					log.debug(
-						f"collecting definition fields, b_defi = {b_defi!r}" +
-						f"\nb_key = {b_key!r}:\ntoo few data after \\x60"
+						f"collecting definition fields, b_defi = {b_defi!r}"
+						f"\nb_key = {b_key!r}:\ntoo few data after \\x60",
 					)
 					return
 				fields.b_transcription_60 = b_defi[i:i + Len]
@@ -1603,6 +1642,6 @@ class BglReader(object):
 				log.debug(
 					f"collecting definition fields, b_defi = {b_defi!r}"
 					f"\nb_key = {b_key!r}"
-					f":\nunknown control char. Char code = {b_defi[i]:#02x}"
+					f":\nunknown control char. Char code = {b_defi[i]:#02x}",
 				)
 				return

@@ -20,14 +20,17 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
-from .bgl_language import languageByCode
-from .bgl_charset import charsetByCode
+import typing
+from typing import Any, Callable
 
-from pyglossary.plugins.formats_common import log
 import pyglossary.gregorian as gregorian
+from pyglossary.core import log
 from pyglossary.text_utils import (
 	uintFromBytes,
 )
+
+from .bgl_charset import charsetByCode
+from .bgl_language import BabylonLanguage, languageByCode
 
 
 class InfoItem(object):
@@ -38,17 +41,17 @@ class InfoItem(object):
 	)
 
 	def __init__(
-		self,
+		self: "typing.Self",
 		name: str,
-		decode: "Optional[Callable[[bytes], Any]]" = None,
+		decode: "Callable[[bytes], Any] | None" = None,
 		attr: bool = False,
-	):
+	) -> None:
 		self.name = name
 		self.decode = decode
 		self.attr = attr
 
 
-def decodeBglBinTime(b_value):
+def decodeBglBinTime(b_value: bytes) -> str:
 	jd1970 = gregorian.to_jd(1970, 1, 1)
 	djd, hm = divmod(uintFromBytes(b_value), 24 * 60)
 	year, month, day = gregorian.jd_to(djd + jd1970)
@@ -56,7 +59,7 @@ def decodeBglBinTime(b_value):
 	return f"{year:04d}/{month:02d}/{day:02d}, {hour:02d}:{minute:02d}"
 
 
-def languageInfoDecode(b_value):
+def languageInfoDecode(b_value: bytes) -> "BabylonLanguage | None":
 	"""
 		returns BabylonLanguage instance
 	"""
@@ -65,31 +68,32 @@ def languageInfoDecode(b_value):
 		return languageByCode[intValue]
 	except IndexError:
 		log.warning(f"read_type_3: unknown language code = {intValue}")
-		return
+		return None
 
 
-def charsetInfoDecode(b_value):
+def charsetInfoDecode(b_value: bytes) -> "str | None":
 	value = b_value[0]
 	try:
 		return charsetByCode[value]
 	except KeyError:
 		log.warning(f"read_type_3: unknown charset {value!r}")
+	return None
 
 
-def aboutInfoDecode(b_value):
+def aboutInfoDecode(b_value: bytes) -> "dict[str, str]":
 	if not b_value:
-		return
+		return None
 	aboutExt, _, aboutContents = b_value.partition(b"\x00")
 	if not aboutExt:
 		log.warning("read_type_3: about: no file extension")
-		return
+		return None
 	return {
 		"about_extension": aboutExt,
 		"about": aboutContents,
 	}
 
 
-def utf16InfoDecode(b_value):
+def utf16InfoDecode(b_value: bytes) -> "str | None":
 	"""
 		b_value is byte array
 		returns str, or None (on errors)
@@ -105,20 +109,20 @@ def utf16InfoDecode(b_value):
 		log.warning(
 			f"utf16InfoDecode: b_value={b_value}, null expected at 0",
 		)
-		return
+		return None
 
 	if b_value[1] == 0:
 		if len(b_value) > 2:
 			log.warning(
 				f"utf16InfoDecode: unexpected b_value size: {len(b_value)}",
 			)
-		return
+		return None
 
-	elif b_value[1] > 1:
+	if b_value[1] > 1:
 		log.warning(
 			f"utf16InfoDecode: b_value={b_value!r}, unexpected byte at 1",
 		)
-		return
+		return None
 
 	# now b_value[1] == 1
 	size = 2 * uintFromBytes(b_value[2:6])
@@ -134,7 +138,7 @@ def utf16InfoDecode(b_value):
 	return b_value[8:].decode("utf16")  # str
 
 
-def flagsInfoDecode(b_value):
+def flagsInfoDecode(b_value: bytes) -> "dict[str, bool]":
 	"""
 		returns a dict with these keys:
 			utf8Encoding

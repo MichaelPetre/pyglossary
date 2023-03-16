@@ -37,6 +37,12 @@
 				"customValue": true,
 				"comment": "split up by given approximate file size\nexamples: 100m, 1g"
 			},
+			"file_size_approx_check_num_entries": {
+				"class": "IntOption",
+				"type": "int",
+				"customValue": true,
+				"comment": "for file_size_approx, check every [?] entries"
+			},
 			"separate_alternates": {
 				"class": "BoolOption",
 				"type": "bool",
@@ -46,6 +52,11 @@
 				"class": "BoolOption",
 				"type": "bool",
 				"comment": "add headwords title to beginning of definition"
+			},
+			"version_info": {
+				"class": "BoolOption",
+				"type": "bool",
+				"comment": "add version info tags to slob file"
 			}
 		},
 		"canRead": true,
@@ -55,8 +66,10 @@
 			"compression": "zlib",
 			"content_type": "",
 			"file_size_approx": 0,
+			"file_size_approx_check_num_entries": 100,
 			"separate_alternates": false,
-			"word_title": false
+			"word_title": false,
+			"version_info": false
 		},
 		"readDepends": {
 			"icu": "PyICU"
@@ -194,11 +207,12 @@
 		"canWrite": false,
 		"readOptions": {
 			"html": true,
-			"html_full": false
+			"html_full": true
 		},
 		"readDepends": {
 			"lxml": "lxml",
-			"biplist": "biplist"
+			"biplist": "biplist",
+			"plistlib": "plistlib"
 		}
 	},
 	{
@@ -416,6 +430,17 @@
 				"customValue": true,
 				"comment": "Encoding/charset"
 			},
+			"newline": {
+				"class": "NewlineOption",
+				"type": "str",
+				"customValue": true,
+				"values": [
+					"\r\n",
+					"\n",
+					"\r"
+				],
+				"comment": "Newline string"
+			},
 			"resources": {
 				"class": "BoolOption",
 				"type": "bool",
@@ -452,10 +477,12 @@
 		"canWrite": true,
 		"readOptions": {
 			"encoding": "utf-8",
+			"newline": "\n",
 			"delimiter": ","
 		},
 		"writeOptions": {
 			"encoding": "utf-8",
+			"newline": "\n",
 			"resources": true,
 			"delimiter": ",",
 			"add_defi_format": false,
@@ -992,20 +1019,6 @@
 		]
 	},
 	{
-		"module": "gettext_mo",
-		"lname": "gettext_mo",
-		"name": "GettextMo",
-		"description": "Gettext Binary (mo)",
-		"extensions": [
-			".mo"
-		],
-		"singleFile": true,
-		"optionsProp": {},
-		"canRead": false,
-		"canWrite": false,
-		"enable": false
-	},
-	{
 		"module": "gettext_po",
 		"lname": "gettext_po",
 		"name": "GettextPo",
@@ -1327,60 +1340,6 @@
 		}
 	},
 	{
-		"module": "sdict",
-		"lname": "sdict",
-		"name": "Sdict",
-		"description": "Sdictionary Binary(dct)",
-		"extensions": [
-			".dct"
-		],
-		"singleFile": true,
-		"optionsProp": {},
-		"canRead": true,
-		"canWrite": false,
-		"readOptions": {}
-	},
-	{
-		"module": "sdict_source",
-		"lname": "sdict_source",
-		"name": "SdictSource",
-		"description": "Sdictionary Source (.sdct)",
-		"extensions": [
-			".sdct"
-		],
-		"singleFile": true,
-		"optionsProp": {
-			"enable_info": {
-				"class": "BoolOption",
-				"type": "bool",
-				"comment": "Enable glossary info / metedata"
-			},
-			"newline": {
-				"class": "NewlineOption",
-				"type": "str",
-				"customValue": true,
-				"values": [
-					"\r\n",
-					"\n",
-					"\r"
-				],
-				"comment": "Newline string"
-			},
-			"resources": {
-				"class": "BoolOption",
-				"type": "bool",
-				"comment": "Enable resources / data files"
-			}
-		},
-		"canRead": false,
-		"canWrite": true,
-		"writeOptions": {
-			"enable_info": true,
-			"newline": "\n",
-			"resources": true
-		}
-	},
-	{
 		"module": "sql",
 		"lname": "sql",
 		"name": "Sql",
@@ -1443,6 +1402,11 @@
 		],
 		"singleFile": false,
 		"optionsProp": {
+			"large_file": {
+				"class": "BoolOption",
+				"type": "bool",
+				"comment": "Use idxoffsetbits=64 bits, for large files only"
+			},
 			"stardict_client": {
 				"class": "BoolOption",
 				"type": "bool",
@@ -1519,6 +1483,7 @@
 			"unicode_errors": "strict"
 		},
 		"writeOptions": {
+			"large_file": false,
 			"dictzip": true,
 			"sametypesequence": "",
 			"stardict_client": false,

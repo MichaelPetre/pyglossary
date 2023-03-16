@@ -1,11 +1,19 @@
-# -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
-from pyglossary.entry import Entry
-from pyglossary.sort_keys import namedSortKeyByName
-from os import listdir
-from os.path import isfile
+import typing
+
+# -*- coding: utf-8 -*-
 from json import load
+from os import listdir
+from os.path import isfile, join, splitext
+from typing import Iterator
+
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	EncodingOption,
+	Option,
+)
+from pyglossary.sort_keys import lookupSortKey
 
 enable = True
 lname = "wordset"
@@ -20,7 +28,7 @@ website = (
 	"https://github.com/wordset/wordset-dictionary",
 	"@wordset/wordset-dictionary",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 }
 
@@ -28,7 +36,7 @@ optionsProp = {
 class Reader(object):
 	_encoding: str = "utf-8"
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._clear()
 		self.defiTemplate = (
@@ -49,29 +57,29 @@ class Reader(object):
 		},
 		"""
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		self._clear()
 
-	def _clear(self) -> None:
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ""
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		name = self._glos.getInfo("name")
 		if not name or name == "data":
 			self._glos.setInfo("name", "Wordset.org")
 		self._glos.setDefaultDefiFormat("h")
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		return 0
 
-	def fileNameSortKey(self, fname: str) -> str:
+	def fileNameSortKey(self: "typing.Self", fname: str) -> str:
 		fname = splitext(fname)[0]
 		if fname == "misc":
 			return "\x80"
 		return fname
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if not self._filename:
 			raise RuntimeError("iterating over a reader while it's not open")
 
@@ -85,7 +93,10 @@ class Reader(object):
 			with open(fpath, encoding=encoding) as fileObj:
 				data = load(fileObj)
 				words = list(data.keys())
-				sortKey = namedSortKeyByName["headword_lower"].normal("utf-8")
+				namedSortKey = lookupSortKey("headword_lower")
+				if namedSortKey is None:
+					raise RuntimeError("namedSortKey is None")
+				sortKey = namedSortKey.normal("utf-8")
 				words.sort(key=sortKey)
 				for word in words:
 					entryDict = data[word]

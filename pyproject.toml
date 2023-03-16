@@ -1,0 +1,101 @@
+[tool.ruff]
+select = [
+    "E", # pycodestyle Error
+    "W", # pycodestyle Warning
+    "F", # Pyflakes
+    "YTT", # flake8-2020
+    "TID", # flake8-tidy-imports
+    "I", # isort: unsorted-imports, missing-required-import
+    "COM", # flake8-commas
+    "B", # flake8-bugbear
+    "T10", # flake8-debugger
+    "ISC", # flake8-implicit-str-concat
+    "PIE", # flake8-pie
+    "RET", # flake8-return
+    "TID", # flake8-tidy-imports
+    "PGH", # pygrep-hooks
+    # "TCH", # flake8-type-checking, not done for plugins
+    # "ARG", # flake8-unused-arguments
+
+    # "EXE", # flake8-executable TODO
+
+
+    # "C90", # mccabe: C901: {name} is too complex ({complexity})
+    # "D", # pydocstyle
+    # "UP", # pyupgrade
+    # "A", # flake8-builtins
+    # "ANN", # flake8-annotations
+    # "BLE", # flake8-blind-except
+    # "FBT", # flake8-boolean-trap
+    # "DTZ", # flake8-datetimez
+
+    # "N", # pep8-naming
+
+    # "SIM", # flake8-simplify, mostly done, not sure about enforcing it
+    # "S", # flake8-bandit
+    # "C4", # flake8-comprehensions
+    #   when did Python's sorted() start returning list?
+]
+ignore = [
+    # "E501", # Line too long (only a few left in template strings in scripts/)
+    "E402", # Module level import not at top of file
+    "UP009", # UTF-8 encoding declaration is unnecessary
+    "SIM105", # Use contextlib.suppress({exception}) instead of try-except-pass
+    "SIM108", # Use ternary operator {contents} instead of if-else-block
+    "SIM117", # Use a single with statement with multiple contexts...
+    # ERA, PD,
+]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = [
+    "F401",
+    # "E", "F", "W",
+    "RET",
+    "I",
+    "COM",
+    # since which Python is comma after **kwargs allowd?
+    "TCH",
+    "ANN",
+]
+unfixable = []
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    "setup.py",
+    # "pyglossary/ui/gtk4_utils/*",
+    # "pyglossary/ui/gtk3_utils/*",
+    "pyglossary/plugins/testformat.py",
+    "pyglossary/plugin_lib/*/gzip_no_crc.py",
+    "pyglossary/ui/gtk*_utils/__init__.py",
+    "pyglossary/ui/ui_qt.py",
+    "pyglossary/reverse.py",
+    "wcwidth*",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "venv",
+]
+per-file-ignores = {}
+
+# Same as Black.
+line-length = 88
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+target-version = "py39"
+
+[tool.ruff.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10

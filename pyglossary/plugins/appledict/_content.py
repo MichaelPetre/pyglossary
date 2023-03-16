@@ -23,9 +23,12 @@
 # should be moved to separate modules (like content processors) and enabled
 # per-glossary (by title or something else)
 
-import re
 import logging
-from xml.sax.saxutils import unescape, quoteattr
+import re
+from typing import Any
+from typing.re import Pattern
+from xml.sax.saxutils import quoteattr, unescape
+
 from pyglossary.text_utils import toStr
 
 log = logging.getLogger("pyglossary")
@@ -49,7 +52,7 @@ re_margin = re.compile(r"margin-left:(\d)em")
 
 
 def prepare_content(
-	title: "Optional[str]",
+	title: "str | None",
 	body: str,
 	BeautifulSoup: "Any",
 ) -> str:
@@ -74,11 +77,11 @@ def prepare_content(
 
 	content = content.replace("&nbsp;", "&#160;")
 	content = re_nonprintable.sub("", content)
-	return content
+	return content  # noqa: RET504
 
 
 def prepare_content_without_soup(
-	title: "Optional[str]",
+	title: "str | None",
 	body: str,
 ) -> str:
 	# somewhat analogue to what BeautifulSoup suppose to do
@@ -110,11 +113,11 @@ def prepare_content_without_soup(
 	content = f"<h1>{title}</h1>{body}" if title else body
 	content = re_brhr.sub(r"<\g<1> />", content)
 	content = re_img.sub(r"<img \g<1>/>", content)
-	return content
+	return content  # noqa: RET504
 
 
 def prepare_content_with_soup(
-	title: "Optional[str]",
+	title: "str | None",
 	body: str,
 	BeautifulSoup: "Any",
 ) -> str:
@@ -160,7 +163,7 @@ def prepare_content_with_soup(
 			# for oxford9
 			log.debug(f"phonetics: {tag=}")
 			if tag.audio and "name" in tag.audio.attrs:
-				tag["onmousedown"] = f"this.lastChild.play(); return false;"
+				tag["onmousedown"] = "this.lastChild.play(); return false;"
 				src_name = tag.audio["name"].replace("#", "_")
 				tag.audio["src"] = f"{src_name}.mp3"
 
@@ -168,12 +171,16 @@ def prepare_content_with_soup(
 			tag["href"] = f"x-dictionary:d:{href}"
 
 	for thumb in soup.find_all("div", "pic_thumb"):
-		thumb["onclick"] = 'this.setAttribute("style", "display:none"); ' \
+		thumb["onclick"] = (
+			'this.setAttribute("style", "display:none"); '
 			'this.nextElementSibling.setAttribute("style", "display:block")'
+		)
 
 	for pic in soup.find_all("div", "big_pic"):
-		pic["onclick"] = 'this.setAttribute("style", "display:none"), ' \
+		pic["onclick"] = (
+			'this.setAttribute("style", "display:none"), '
 			'this.previousElementSibling.setAttribute("style", "display:block")'
+		)
 
 	# to unfold(expand) and fold(collapse) blocks
 	for pos in soup.find_all("pos", onclick="toggle_infl(this)"):
@@ -206,18 +213,15 @@ def prepare_content_with_soup(
 		soup.insert(0, h1)
 
 	# hence the name BeautifulSoup
-	# soup.insert(0,head)
-	content = toStr(soup.encode_contents())
-	return content
+	# soup.insert(0, head)
+	return toStr(soup.encode_contents())
 
 
-def cleanup_link_target(href):
-	if href.startswith("bword://"):
-		href = href[len("bword://"):]
-	return href
+def cleanup_link_target(href: str) -> str:
+	return href.removeprefix("bword://")
 
 
-def href_sub(x: "typing.re.Pattern") -> str:
+def href_sub(x: "Pattern") -> str:
 	href = x.groups()[1]
 	if href.startswith("http"):
 		return x.group()
@@ -228,7 +232,7 @@ def href_sub(x: "typing.re.Pattern") -> str:
 		"x-dictionary:d:" + unescape(
 			href,
 			{"&quot;": '"'},
-		)
+		),
 	)
 
 
@@ -244,7 +248,7 @@ def remove_style(tag: dict, line: str) -> None:
 		del tag["style"]
 
 
-def fix_sound_link(href: str, tag: dict):
+def fix_sound_link(href: str, tag: "dict[str, Any]") -> None:
 	tag["href"] = f'javascript:new Audio("{href[len("sound://"):]}").play();'
 
 

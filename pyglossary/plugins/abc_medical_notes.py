@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
 import html
+import typing
+from typing import TYPE_CHECKING, Iterator
+
+from pyglossary.glossary_types import EntryType, GlossaryType
+
+if TYPE_CHECKING:
+	import sqlite3
 
 enable = True
 lname = "abc_medical_notes"
@@ -11,37 +17,44 @@ extensions = ()
 extensionCreate = ".db"
 kind = "binary"
 wiki = ""
+_url = (
+	"https://play.google.com/store/apps/details?id="
+	"com.pocketmednotes2014.secondapp"
+)
 website = (
-	"https://play.google.com/store/apps/details?id=" +
-	"com.pocketmednotes2014.secondapp",
+	_url,
 	"ABC Medical Notes 2021 - Google Play",
 )
 
 
 class Reader(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
-		self._filename = ''
-		self._con = None
-		self._cur = None
+	def _clear(self: "typing.Self") -> None:
+		self._filename = ""
+		self._con: "sqlite3.Connection | None" = None
+		self._cur: "sqlite3.Cursor | None" = None
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		from sqlite3 import connect
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		self._glos.setDefaultDefiFormat("h")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute("select count(*) from NEW_TABLE")
 		return self._cur.fetchone()[0]
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute(
-			"select _id, contents from NEW_TABLE where _id is not null"
+			"select _id, contents from NEW_TABLE where _id is not null",
 		)
 		# FIXME: iteration over self._cur stops after one entry
 		# and self._cur.fetchone() returns None
@@ -52,7 +65,7 @@ class Reader(object):
 			# print(f"{word!r}, {definition!r}")
 			yield self._glos.newEntry(word, definition, defiFormat="h")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

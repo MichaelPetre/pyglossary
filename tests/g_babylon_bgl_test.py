@@ -1,15 +1,16 @@
 import sys
-from os.path import dirname, abspath, join
+import typing
 import unittest
+from os.path import abspath, dirname, join
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from tests.glossary_test import TestGlossaryBase
+from tests.glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryBGL(TestGlossaryBase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 
 		self.dataFileCRC32.update({
@@ -21,12 +22,12 @@ class TestGlossaryBGL(TestGlossaryBase):
 		})
 
 	def convert_bgl_txt(
-		self,
+		self: "typing.Self",
 		fname,
 		sha1sum=None,
 		md5sum=None,
 		resFiles=None,
-		**convertArgs
+		**convertArgs,
 	):
 		if resFiles is None:
 			resFiles = {}
@@ -40,7 +41,7 @@ class TestGlossaryBGL(TestGlossaryBase):
 			f"{fname}-2.txt",
 			sha1sum=sha1sum,
 			md5sum=md5sum,
-			**convertArgs
+			**convertArgs,
 		)
 
 		for resName in resFiles:
@@ -48,26 +49,26 @@ class TestGlossaryBGL(TestGlossaryBase):
 			resPathExpected = self.downloadFile(f"{fname}.txt_res/{resName}")
 			self.compareBinaryFiles(resPathActual, resPathExpected)
 
-	def test_convert_bgl_txt_1(self):
+	def test_convert_bgl_txt_1(self: "typing.Self"):
 		self.convert_bgl_txt(
 			"Flavours_of_Malaysia",
 			sha1sum="2b1fae135df2aaaeac23fb1dde497a4b6a22fd95",
 			resFiles=["icon1.ico"],
 		)
 
-	def test_convert_bgl_txt_2(self):
+	def test_convert_bgl_txt_2(self: "typing.Self"):
 		self.convert_bgl_txt(
 			"Currency_In_Each_Country",
 			sha1sum="731147c72092d813dfe1ab35d420477478832443",
 		)
 
-	def test_convert_bgl_txt_3(self):
+	def test_convert_bgl_txt_3(self: "typing.Self"):
 		self.convert_bgl_txt(
 			"Solar_Physics_Glossary",
 			sha1sum="f30b392c748c4c5bfa52bf7f9945c574617ff74a",
 		)
 
-	def test_convert_bgl_txt_4(self):
+	def test_convert_bgl_txt_4(self: "typing.Self"):
 		self.convert_bgl_txt(
 			"Farsi_Aviation_Dictionary",
 			sha1sum="b5741bf7ca4306f76ba414fe8efb637c59999d2b",

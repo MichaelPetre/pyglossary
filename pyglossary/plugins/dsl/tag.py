@@ -20,7 +20,9 @@ internal stuff. Tag class
 
 
 from collections import namedtuple
+from typing import Iterable
 
+from . import layer as _layer
 
 Tag = namedtuple("Tag", ["opening", "closing"])
 
@@ -37,13 +39,9 @@ predefined = [
 ]
 
 
-def was_opened(stack, tag):
+def was_opened(stack: "Iterable[_layer.Layer]", tag: "Tag") -> bool:
 	"""
 	check if tag was opened at some layer before.
-
-	:param stack: Iterable[layer.Layer]
-	:param tag: tag.Tag
-	:return: bool
 	"""
 	if not len(stack):
 		return False
@@ -53,14 +51,11 @@ def was_opened(stack, tag):
 	return was_opened(stack[:-1], tag)
 
 
-def canonical_order(tags):
+def canonical_order(tags: "Iterable[Tag]") -> "list[Tag]":
 	"""
 	arrange tags in canonical way, where (outermost to innermost):
 	m  >  *  >  ex  >  i  >  c
 	with all other tags follow them in alphabetical order.
-
-	:param tags: Iterable[Tag]
-	:return: List
 	"""
 	result = []
 	tags = list(tags)
@@ -73,13 +68,12 @@ def canonical_order(tags):
 	return result
 
 
-def index_of_layer_containing_tag(stack, tag):
+def index_of_layer_containing_tag(
+	stack: "Iterable[_layer.Layer]",
+	tag: str,
+) -> "int | None":
 	"""
 	return zero based index of layer with `tag` or None
-
-	:param stack: Iterable[layer.Layer]
-	:param tag: str
-	:return: int | None
 	"""
 	for i, layer in enumerate(reversed(stack)):
 		for t in layer.tags:

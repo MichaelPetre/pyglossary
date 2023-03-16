@@ -1,3 +1,6 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2016-2017 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
@@ -14,25 +17,23 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-
-from gi.repository import Gtk as gtk
 from gi.repository import Gdk as gdk
 
 from .utils import gtk_event_iteration_loop
 
 
 class MyDialog(object):
-	def startWaiting(self):
+	def startWaiting(self: "typing.Self"):
 		self.queue_draw()
 		self.vbox.set_sensitive(False)
 		self.get_window().set_cursor(gdk.Cursor.new(gdk.CursorType.WATCH))
 		gtk_event_iteration_loop()
 
-	def endWaiting(self):
+	def endWaiting(self: "typing.Self"):
 		self.get_window().set_cursor(gdk.Cursor.new(gdk.CursorType.LEFT_PTR))
 		self.vbox.set_sensitive(True)
 
-	def waitingDo(self, func, *args, **kwargs):
+	def waitingDo(self: "typing.Self", func, *args, **kwargs):
 		self.startWaiting()
 		try:
 			func(*args, **kwargs)

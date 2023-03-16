@@ -1,44 +1,23 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
+from typing import TYPE_CHECKING
 
-MultiStr = "Union[str, List[str]]"
+from .glossary_types import EntryType
 
-RawEntryType = """Union[
-	bytes,  # compressed
-	Tuple[List[str], bytes],  # uncompressed, without defiFormat
-	Tuple[List[str], bytes, str],  # uncompressed, with defiFormat
-]"""
+if TYPE_CHECKING:
+	from typing import TypeAlias
 
 
-class BaseEntry(object):
-	__slots__ = []
+MultiStr: "TypeAlias" = "str | list[str]"
 
-	def isData(self) -> bool:
-		raise NotImplementedError
 
-	def getFileName(self) -> str:
-		raise NotImplementedError
+class BaseEntry(EntryType):
+	__slots__: "list[str]" = []
 
 	@property
-	def data(self) -> bytes:
-		raise NotImplementedError
-
-	def save(self, directory: str) -> str:
-		raise NotImplementedError
-
-	@property
-	def s_word(self) -> str:
-		raise NotImplementedError
-
-	@property
-	def l_word(self) -> "List[str]":
-		raise NotImplementedError
-
-	@property
-	def defi(self) -> str:
-		raise NotImplementedError
-
-	@property
-	def b_word(self):
+	def b_word(self: "typing.Self") -> bytes:
 		"""
 			returns bytes of word,
 				and all the alternate words
@@ -47,54 +26,10 @@ class BaseEntry(object):
 		return self.s_word.encode("utf-8")
 
 	@property
-	def b_defi(self):
+	def b_defi(self: "typing.Self") -> bytes:
 		"""
 			returns bytes of definition,
 				and all the alternate definitions
 				separated by b"|"
 		"""
 		return self.defi.encode("utf-8")
-
-	@property
-	def defiFormat(self) -> str:
-		# TODO: type: Literal["m", "h", "x", "b"]
-		raise NotImplementedError
-
-	@defiFormat.setter
-	def defiFormat(self, defiFormat: str) -> None:
-		# TODO: type: Literal["m", "h", "x", "b"]
-		raise NotImplementedError
-
-	def detectDefiFormat(self) -> None:
-		raise NotImplementedError
-
-	def addAlt(self, alt: str) -> None:
-		raise NotImplementedError
-
-	def editFuncWord(self, func: "Callable[[str], str]") -> None:
-		raise NotImplementedError
-
-	def editFuncDefi(self, func: "Callable[[str], str]") -> None:
-		raise NotImplementedError
-
-	def strip(self) -> None:
-		raise NotImplementedError
-
-	def replaceInWord(self, source: str, target: str) -> None:
-		raise NotImplementedError
-
-	def replaceInDefi(self, source: str, target: str) -> None:
-		raise NotImplementedError
-
-	def replace(self, source: str, target: str) -> None:
-		raise NotImplementedError
-
-	def getRaw(self, glos: "GlossaryType") -> RawEntryType:
-		raise NotImplementedError
-
-	@staticmethod
-	def getRawEntrySortKey(
-		glos: "GlossaryType",
-		key: "Callable[[str], Any]",
-	) -> "Callable[[Tuple], str]":
-		raise NotImplementedError

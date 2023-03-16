@@ -1,13 +1,22 @@
-from pyglossary.plugins.formats_common import *
+
+import typing
 from hashlib import sha1
-from os.path import dirname
-from os import makedirs, listdir
+from os import listdir, makedirs
+from os.path import dirname, isdir, isfile, join, splitext
+from typing import Generator, Iterator
+
+from pyglossary.compression import (
+	compressionOpenFunc,
+)
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	Option,
+	StrOption,
+)
 from pyglossary.text_utils import (
 	escapeNTB,
 	splitByBarUnescapeNTB,
-)
-from pyglossary.compression import (
-	compressionOpenFunc,
 )
 
 enable = True
@@ -20,7 +29,7 @@ singleFile = True
 kind = "directory"
 wiki = ""
 website = None
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"compression": StrOption(
 		values=["", "gz", "bz2", "lzma"],
 		comment="Compression Algorithm",
@@ -31,19 +40,19 @@ optionsProp = {
 class Writer(object):
 	_compression: str = ""
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		pass
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		if not isdir(filename):
 			makedirs(filename)
 
-	def filePathFromWord(self, b_word: bytes) -> str:
+	def filePathFromWord(self: "typing.Self", b_word: bytes) -> str:
 		bw = b_word.lower()
 		if len(bw) <= 2:
 			return bw.hex()
@@ -55,11 +64,12 @@ class Writer(object):
 		return join(
 			bw[:2].hex() + ".d",
 			bw[2:4].hex() + ".d",
-			bw[4:8].hex() + "-" + sha1(b_word).hexdigest()[:8],
+			bw[4:8].hex() + "-" + sha1(b_word).hexdigest()[:8],  # noqa: S324
 		)
 
-	def write(self, ):
+	def write(self: "typing.Self") -> None:
 		from collections import OrderedDict as odict
+
 		from pyglossary.json_utils import dataToPrettyJson
 
 		filename = self._filename
@@ -68,7 +78,7 @@ class Writer(object):
 		compression = self._compression
 		c_open = compressionOpenFunc(compression)
 		if not c_open:
-			raise ValueError(f"invalid compression {c!r}")
+			raise ValueError(f"invalid compression {compression!r}")
 		while True:
 			entry = yield
 			if entry is None:
@@ -83,10 +93,10 @@ class Writer(object):
 				makedirs(parentDir)
 			if isfile(fpath):
 				log.warning(f"file exists: {fpath}")
-				fpath += f"-{sha1(entry.b_defi).hexdigest()[:4]}"
+				fpath += f"-{sha1(entry.b_defi).hexdigest()[:4]}"  # noqa: S324
 			with c_open(fpath, "wt", encoding="utf-8") as _file:
 				_file.write(
-					f"{escapeNTB(entry.s_word)}\n{entry.defi}"
+					f"{escapeNTB(entry.s_word)}\n{entry.defi}",
 				)
 			wordCount += 1
 
@@ -107,12 +117,12 @@ class Writer(object):
 
 
 class Reader(object):
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 		self._wordCount = 0
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		from pyglossary.json_utils import jsonToOrderedData
 
 		self._filename = filename
@@ -123,13 +133,13 @@ class Reader(object):
 		for key, value in info.items():
 			self._glos.setInfo(key, value)
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		pass
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		return self._wordCount
 
-	def _fromFile(self, fpath):
+	def _fromFile(self: "typing.Self", fpath: str) -> "EntryType":
 		_, ext = splitext(fpath)
 		c_open = compressionOpenFunc(ext.lstrip("."))
 		if not c_open:
@@ -140,17 +150,17 @@ class Reader(object):
 			defi = _file.read()
 			return self._glos.newEntry(words, defi)
 
-	def _listdirSortKey(self, name):
+	def _listdirSortKey(self: "typing.Self", name: str) -> str:
 		name_nox, ext = splitext(name)
 		if ext == ".d":
 			return name
 		return name_nox
 
 	def _readDir(
-		self,
+		self: "typing.Self",
 		dpath: str,
-		exclude: "Optional[Set[str]]",
-	):
+		exclude: "set[str] | None",
+	) -> "Generator[None, EntryType, None]":
 		children = listdir(dpath)
 		if exclude:
 			children = [
@@ -168,7 +178,7 @@ class Reader(object):
 				continue
 			log.error(f"Not a file nor a directory: {cpath}")
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		yield from self._readDir(
 			self._filename,
 			{

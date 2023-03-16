@@ -65,8 +65,6 @@ Android Termux - interactive command-line interface
 | [Lingoes Source](./doc/p/lingoes_ldf.md)                |  📝  |      .ldf       |  ✔   |   ✔   |
 | [Mobipocket E-Book](./doc/p/mobi.md)                    |  🔢  |      .mobi      |  ❌   |   ✔   |
 | [Octopus MDict](./doc/p/octopus_mdict.md)               |  🔢  |      .mdx       |  ✔   |   ❌   |
-| [Sdictionary Binary](./doc/p/sdict.md)                  |  🔢  |      .dct       |  ✔   |       |
-| [Sdictionary Source](./doc/p/sdict_source.md)           |  📝  |      .sdct      |      |   ✔   |
 | [SQL](./doc/p/sql.md)                                   |  📝  |      .sql       |  ❌   |   ✔   |
 | [StarDict](./doc/p/stardict.md)                         |  📁  |     (📝.ifo)     |  ✔   |   ✔   |
 | [StarDict Textual File](./doc/p/stardict_textual.md)    |  📝  |     (.xml)      |  ✔   |   ✔   |
@@ -91,7 +89,7 @@ So you need to select the format (with UI or `--read-format` flag).
 
 ## Requirements
 
-PyGlossary requires **Python 3.8 or higher**, and works in practically all
+PyGlossary requires **Python 3.9 or higher**, and works in practically all
 modern operating systems. While primarily designed for *GNU/Linux*, it works
 on *Windows*, *Mac OS X* and other Unix-based operating systems as well.
 
@@ -126,7 +124,7 @@ ways to use the program).
   `python3 main.py --help`
 
   - **Interactive command-line interface**
-    - Requires: `pip3 install prompt_toolkit`
+    - Requires: `pip install prompt_toolkit`
     - Perfect for mobile devices (like Termux on Android) where no GUI is available
     - Automatically selected if output file argument is not passed **and** one of these:
       - On Linux and `$DISPLAY` environment variable is empty or not set
@@ -159,7 +157,7 @@ But you can explicitly determine the user interface type using `--ui`
 
 ## Installation on Windows
 
-- [Download and install Python](https://www.python.org/downloads/windows/) (3.8 or above is recommended)
+- [Download and install Python](https://www.python.org/downloads/windows/) (3.9 or above)
 - Open Start -> type Command -> right-click on Command Prompt -> Run as administrator
 - To ensure you have `pip`, run: `python -m ensurepip --upgrade`
 - To install, run: `pip install --upgrade pyglossary`
@@ -169,9 +167,11 @@ But you can explicitly determine the user interface type using `--ui`
 
 ## Feature-specific requirements
 
-- **Using `--remove-html-all` flag**
+- Using [Sort by Locale](#sorting) feature requires [PyICU](./doc/pyicu.md)
 
-  `sudo pip3 install lxml beautifulsoup4`
+- Using `--remove-html-all` flag requires:
+
+  `pip install lxml beautifulsoup4`
 
 Some formats have additional requirements.
 If you have trouble with any format, please check the [link given for that format](#supported-formats) to see its documentations.
@@ -232,17 +232,7 @@ There are two things than can activate sorting entries:
 
 In the case of passing `--sort`, you can also pass:
 
-- `--sort-key` to select sort key aka sorting order, see [doc/sort-key.md](./doc/sort-key.md)
-
-- `--sort-locale` to sort based on a given locale, for example `--sort-locale=fa_IR.UTF-8`
-
-  - Sorts words in the given language in the **correct alphabetical order of that language**
-  - If this language uses a non-Latin script, all words in this language are sorted **before** ASCII/Latin words
-
-- `--sort-script` to change the order of entries based on writing system (script) of headword
-
-  For example with `--sort-script=latin,arabic`, entries with headword in Latin script will come before entries with headword in Arabic script.\
-  You can select many scripts, for example `--sort-script=latin,cyrillic,CJK,Devanagari,Greek` (script names are not case-sensitive).
+- `--sort-key` to select sort key aka sorting order (including locale), see [doc/sort-key.md](./doc/sort-key.md)
 
 - `--sort-encoding` to change the encoding used for sort
 
@@ -297,7 +287,29 @@ glos.convert(
 )
 ```
 
+And if you choose to use `glossary_v2`:
+
+```python
+import sys
+from pyglossary.glossary_v2 import ConvertArgs, Glossary
+
+# Glossary.init() should be called only once, so make sure you put it
+# in the right place
+Glossary.init()
+
+glos = Glossary()
+glos.convert(ConvertArgs(
+	inputFilename=sys.argv[1],
+	outputFilename=f"{sys.argv[1]}.txt",
+	# although it can detect format for *.txt, you can still pass outputFormat
+	outputFormat="Tabfile",
+	# you can pass readOptions or writeOptions as a dict
+	# writeOptions={"encoding": "utf-8"},
+))
+```
+
 You may look at docstring of `Glossary.convert` for full list of keyword arguments.
+
 
 If you need to add entries inside your Python program (rather than converting one glossary into another), then you use `write` instead of `convert`, here is an example:
 
@@ -324,13 +336,18 @@ glos.setInfo("author", "John Doe")
 glos.write("test.ifo", format="Stardict")
 ```
 
+**Note:** `addEntryObj` is renamed to `addEntry` in `pyglossary.glossary_v2`.
+
+**Note:** Switching to `glossary_v2` is optional and recommended.
+
+
 And if you need to read a glossary from file into a `Glossary` object in RAM (without immediately converting it), you can use `glos.read(filename, format=inputFormat)`. Be wary of RAM usage in this case.
 
 If you want to include images, css, js or other files in a glossary that you are creating, you need to add them as **Data Entries**, for example:
 
 ```python
 with open(os.path.join(imageDir, "a.jpeg")) as fp:
-	glos.addEntryObj(glos.newDataEntry("img/a.jpeg", fp.read()))
+	glos.addEntry(glos.newDataEntry("img/a.jpeg", fp.read()))
 ```
 
 The first argument to `newDataEntry` must be the relative path (that generally html codes of your definitions points to).

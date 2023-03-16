@@ -1,9 +1,24 @@
-# -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
-from pyglossary.text_reader import TextGlossaryReader
-from pyglossary.text_utils import splitByBar
+import typing
+
+# -*- coding: utf-8 -*-
+from typing import Generator
+
+from pyglossary.compression import (
+	# compressionOpen,
+	stdCompressions,
+)
+from pyglossary.core import log
 from pyglossary.file_utils import fileCountLines
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	NewlineOption,
+	Option,
+)
+from pyglossary.text_reader import TextGlossaryReader, nextBlockResultType
+from pyglossary.text_utils import replaceStringTable, splitByBar
 
 enable = True
 lname = "lingoes_ldf"
@@ -18,7 +33,7 @@ website = (
 	"http://www.lingoes.net/en/dictionary/dict_format.php",
 	"Lingoes.net",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"newline": NewlineOption(),
 	"resources": BoolOption(comment="Enable resources / data files"),
 	"encoding": EncodingOption(),
@@ -28,28 +43,28 @@ optionsProp = {
 class Reader(TextGlossaryReader):
 	compressions = stdCompressions
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		if self._wordCount is None:
 			log.debug("Try not to use len(reader) as it takes extra time")
 			self._wordCount = fileCountLines(
 				self._filename,
-				newline="\n\n",
+				newline=b"\n\n",
 			) - self._leadingLinesCount
 		return self._wordCount
 
-	def isInfoWord(self, word):
+	def isInfoWord(self: "typing.Self", word: str) -> bool:
 		if isinstance(word, str):
 			return word.startswith("#")
-		else:
-			return False
 
-	def fixInfoWord(self, word):
+		return False
+
+	def fixInfoWord(self: "typing.Self", word: str) -> str:
 		if isinstance(word, str):
 			return word.lstrip("#").lower()
-		else:
-			return word
 
-	def nextBlock(self):
+		return word
+
+	def nextBlock(self: "typing.Self") -> "nextBlockResultType":
 		if not self._file:
 			raise StopIteration
 		entryLines = []
@@ -70,13 +85,13 @@ class Reader(TextGlossaryReader):
 
 			# now `line` is empty, process `entryLines`
 			if not entryLines:
-				return
+				return None
 			if len(entryLines) < 2:
 				log.error(
-					f"invalid block near line {fileObj.line}"
-					f" in file {filename}"
+					f"invalid block near line {self._file.line}"
+					f" in file {self._filename}",
 				)
-				return
+				return None
 			word = entryLines[0]
 			defi = "\n".join(entryLines[1:])
 			defi = defi.replace("<br/>", "\n")  # FIXME
@@ -92,23 +107,23 @@ class Writer(object):
 	_newline: str = "\n"
 	_resources: str = True
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 
-	def getInfo(self, key):
+	def getInfo(self: "typing.Self", key: str) -> str:
 		return self._glos.getInfo(key).replace("\n", "<br>")
 
-	def getAuthor(self):
+	def getAuthor(self: "typing.Self") -> None:
 		return self._glos.author.replace("\n", "<br>")
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		self._filename = None
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		from pyglossary.text_writer import writeTxt
 		newline = self._newline
 		resources = self._resources

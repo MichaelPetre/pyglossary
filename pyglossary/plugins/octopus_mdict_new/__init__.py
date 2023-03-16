@@ -16,12 +16,26 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-from pyglossary.plugins.formats_common import *
-
-import os
-import sys
 import gc
-from os.path import splitext, isfile, isdir, extsep, basename, dirname
+import os
+import re
+import sys
+import typing
+from os.path import dirname, extsep, isfile, join, splitext
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+	from pyglossary.plugin_lib.readmdict import MDD, MDX
+
+
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
+from pyglossary.text_utils import toStr
 
 enable = True
 lname = "octopus_mdict"
@@ -36,7 +50,7 @@ website = (
 	"https://www.mdict.cn/wp/?page_id=5325&lang=en",
 	"Download | MDict.cn",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"substyle": BoolOption(
 		comment="Enable substyle",
@@ -53,7 +67,7 @@ extraDocs = [
 	(
 		"`python-lzo` is required for **some** MDX glossaries.",
 		"""First try converting your MDX file, if failed (`AssertionError` probably),
-then try to install [LZO library and Python binding](./doc/lzo.md)."""
+then try to install [LZO library and Python binding](./doc/lzo.md).""",
 	),
 ]
 
@@ -64,26 +78,26 @@ class Reader(object):
 	_same_dir_data_files: bool = False
 	_audio: bool = False
 
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self.clear()
 		self._re_internal_link = re.compile('href=(["\'])(entry://|[dx]:)')
 		self._re_audio_link = re.compile(
-			'<a (type="sound" )?([^<>]*? )?href="sound://([^<>"]+)"( .*?)?>(.*?)</a>'
+			'<a (type="sound" )?([^<>]*? )?href="sound://([^<>"]+)"( .*?)?>(.*?)</a>',
 		)
 
-	def clear(self):
+	def clear(self: "typing.Self") -> None:
 		self._filename = ""
-		self._mdx = None
-		self._mdd = []
+		self._mdx: "MDX | None" = None
+		self._mdd: "list[MDD]" = []
 		self._wordCount = 0
 		self._dataEntryCount = 0
 
 		# dict of mainWord -> newline-separated alternatives
-		self._linksDict = {}  # type: Dict[str, str]
+		self._linksDict: "dict[str, str]" = {}
 
-	def open(self, filename):
-		from pyglossary.plugin_lib.readmdict import MDX, MDD
+	def open(self: "typing.Self", filename: str) -> None:
+		from pyglossary.plugin_lib.readmdict import MDD, MDX
 		self._filename = filename
 		self._mdx = MDX(filename, self._encoding, self._substyle)
 
@@ -112,7 +126,8 @@ class Reader(object):
 		self._dataEntryCount = dataEntryCount
 		log.info(f"Found {len(self._mdd)} mdd files with {dataEntryCount} entries")
 
-		log.debug("mdx.header = " + pformat(self._mdx.header))
+		# from pprint import pformat
+		# log.debug("mdx.header = " + pformat(self._mdx.header))
 		# for key, value in self._mdx.header.items():
 		# 	key = key.lower()
 		# 	self._glos.setInfo(key, value)
@@ -130,13 +145,18 @@ class Reader(object):
 
 		self.loadLinks()
 
-	def loadLinks(self):
+	def loadLinks(self: "typing.Self") -> None:
 		from pyglossary.plugin_lib.readmdict import MDX
+
+		mdx = self._mdx
+		if mdx is None:
+			raise ValueError("mdx is None")
+
 		log.info("extracting links...")
-		linksDict = {}
+		linksDict: "dict[str, str]" = {}
 		word = ""
 		wordCount = 0
-		for b_word, b_defi in self._mdx.items():
+		for b_word, b_defi in mdx.items():
 			word = b_word.decode("utf-8")
 			defi = b_defi.decode("utf-8").strip()
 			if defi.startswith("@@@LINK="):
@@ -153,14 +173,14 @@ class Reader(object):
 
 		log.info(
 			"extracting links done, "
-			f"sizeof(linksDict)={sys.getsizeof(linksDict)}"
+			f"sizeof(linksDict)={sys.getsizeof(linksDict)}",
 		)
 		log.info(f"{wordCount = }")
 		self._linksDict = linksDict
 		self._wordCount = wordCount
 		self._mdx = MDX(self._filename, self._encoding, self._substyle)
 
-	def fixDefi(self, defi: str) -> str:
+	def fixDefi(self: "typing.Self", defi: str) -> str:
 		defi = self._re_internal_link.sub(r'href=\1bword://', defi)
 		defi = defi.replace(' src="file://', ' src=".')
 
@@ -181,7 +201,7 @@ class Reader(object):
 
 		return defi
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if self._mdx is None:
 			log.error("trying to iterate on a closed MDX file")
 			return
@@ -224,12 +244,12 @@ class Reader(object):
 					fname = toStr(b_fname)
 					fname = fname.replace("\\", os.sep).lstrip(os.sep)
 					yield glos.newDataEntry(fname, b_data)
-			except Exception as e:
+			except Exception:
 				log.exception(f"Error reading {mdd.filename}")
 		self._mdd = []
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		return self._wordCount + self._dataEntryCount
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		self.clear()

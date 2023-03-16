@@ -1,3 +1,6 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
 # The MIT License (MIT)
 # Copyright © 2012-2016 Alberto Pettarin (alberto@albertopettarin.it)
@@ -17,10 +20,17 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from typing import Any, ClassVar
 
-
-from pyglossary.plugins.formats_common import *
 from pyglossary.ebook_base import EbookWriter
+from pyglossary.flags import ALWAYS
+from pyglossary.glossary_types import GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	IntOption,
+	Option,
+	StrOption,
+)
 
 enable = True
 lname = "epub2"
@@ -36,7 +46,7 @@ website = None
 
 # EPUB-3: https://www.w3.org/community/epub3/
 
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"group_by_prefix_length": IntOption(
 		comment="Prefix length for grouping",
 	),
@@ -195,7 +205,7 @@ p.groupDefinition {
 
 	COVER_TEMPLATE = "<meta name=\"cover\" content=\"{cover}\" />"
 
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		import uuid
 		EbookWriter.__init__(
 			self,
@@ -204,7 +214,7 @@ p.groupDefinition {
 		glos.setInfo("uuid", str(uuid.uuid4()).replace("-", ""))
 
 	@classmethod
-	def cls_get_prefix(cls, options: "Dict[str, Any]", word: str) -> str:
+	def cls_get_prefix(cls: "ClassVar", options: "dict[str, Any]", word: str) -> str:
 		if not word:
 			return None
 		length = options.get("group_by_prefix_length", cls._group_by_prefix_length)
@@ -213,7 +223,7 @@ p.groupDefinition {
 			return "SPECIAL"
 		return prefix
 
-	def get_prefix(self, word: str) -> str:
+	def get_prefix(self: "typing.Self", word: str) -> str:
 		if not word:
 			return None
 		length = self._group_by_prefix_length
@@ -222,7 +232,7 @@ p.groupDefinition {
 			return "SPECIAL"
 		return prefix
 
-	def write_ncx(self, group_labels):
+	def write_ncx(self: "typing.Self", group_labels: "list[str]") -> None:
 		"""
 			write_ncx
 			only for epub

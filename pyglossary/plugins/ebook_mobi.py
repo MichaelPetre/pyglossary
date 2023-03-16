@@ -22,11 +22,23 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os
+import typing
 from datetime import datetime
+from os.path import join
 
-from pyglossary.plugins.formats_common import *
+from pyglossary.core import log
 from pyglossary.ebook_base import EbookWriter
+from pyglossary.flags import DEFAULT_YES
+from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.langs import Lang
+from pyglossary.option import (
+	BoolOption,
+	FileSizeOption,
+	IntOption,
+	Option,
+	StrOption,
+)
 
 enable = True
 lname = "mobi"
@@ -40,7 +52,7 @@ kind = "package"
 wiki = "https://en.wikipedia.org/wiki/Mobipocket"
 website = None
 
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"group_by_prefix_length": IntOption(
 		comment="Prefix length for grouping",
 	),
@@ -90,22 +102,22 @@ extraDocs = [
 	(
 		"Other Requirements",
 		"Install [KindleGen](https://wiki.mobileread.com/wiki/KindleGen)"
-		" for creating Mobipocket e-books."
+		" for creating Mobipocket e-books.",
 	),
 ]
 
 
 class GroupStateBySize(object):
-	def __init__(self, writer) -> None:
+	def __init__(self: "typing.Self", writer: "Writer") -> None:
 		self.writer = writer
 		self.group_index = -1
 		self.reset()
 
-	def reset(self) -> None:
+	def reset(self: "typing.Self") -> None:
 		self.group_contents = []
 		self.group_size = 0
 
-	def add(self, entry: "BaseEntry") -> None:
+	def add(self: "typing.Self", entry: "EntryType") -> None:
 		word = entry.l_word
 		defi = entry.defi
 		content = self.writer.format_group_content(word, defi)
@@ -197,15 +209,17 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 <guide></guide>
 </package>"""
 
-	def __init__(self, glos, **kwargs):
+	def __init__(self: "typing.Self", glos: "GlossaryType", **kwargs) -> None:
 		import uuid
 		EbookWriter.__init__(
 			self,
 			glos,
 		)
 		glos.setInfo("uuid", str(uuid.uuid4()).replace("-", ""))
+		# FIXME: check if full html pages/documents as entry do work
+		# glos.stripFullHtml(errorHandler=None)
 
-	def get_prefix(self, word: str) -> str:
+	def get_prefix(self: "typing.Self", word: str) -> str:
 		if not word:
 			return None
 		length = self._group_by_prefix_length
@@ -214,7 +228,7 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			return "SPECIAL"
 		return prefix
 
-	def format_group_content(self, word: "List[str]", defi: str) -> str:
+	def format_group_content(self: "typing.Self", word: "list[str]", defi: str) -> str:
 		hide_word_index = self._hide_word_index
 		if len(word) == 1:
 			infl = ''
@@ -242,19 +256,22 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			headword_visible = "\n" + self._glos.wordTitleStr(headword)
 			value_headword = ""
 
-		group_content = self.GROUP_XHTML_WORD_DEFINITION_TEMPLATE.format(
+		return self.GROUP_XHTML_WORD_DEFINITION_TEMPLATE.format(
 			spellcheck_str=' spell="yes"' if self._spellcheck else "",
 			headword_visible=headword_visible,
 			value_headword=value_headword,
 			definition=defi,
 			infl=infl,
 		)
-		return group_content
 
-	def getLangCode(self, lang) -> str:
+	def getLangCode(self: "typing.Self", lang: "Lang") -> str:
 		return lang.code if isinstance(lang, Lang) else ""
 
-	def get_opf_contents(self, manifest_contents, spine_contents):
+	def get_opf_contents(
+		self: "typing.Self",
+		manifest_contents: str,
+		spine_contents: str,
+	) -> str:
 		cover = ""
 		if self.cover:
 			cover = self.COVER_TEMPLATE.format(cover=self.cover)
@@ -275,9 +292,9 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			spine=spine_contents,
 		)
 
-	def write_groups(self):
+	def write_groups(self: "typing.Self") -> None:
 
-		def add_group(state):
+		def add_group(state: "GroupStateBySize") -> None:
 			if state.group_size <= 0:
 				return
 			state.group_index += 1
@@ -310,8 +327,9 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 
 		add_group(state)
 
-	def write(self):
-		import subprocess, shutil
+	def write(self: "typing.Self") -> None:
+		import shutil
+		import subprocess
 
 		filename = self._filename
 		kindlegen_path = self._kindlegen_path
@@ -325,14 +343,17 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 		if not kindlegen_path:
 			kindlegen_path = shutil.which("kindlegen")
 		if not kindlegen_path:
-			log.warning(f"Not running kindlegen, the raw files are located in {filename}")
+			log.warning(
+				"Not running kindlegen, "
+				f"the raw files are located in {filename}",
+			)
 			log.warning(
 				"Provide KindleGen path with: "
-				"--write-options 'kindlegen_path=...'"
+				"--write-options 'kindlegen_path=...'",
 			)
 			return
 
-		name = self._glos.getInfo("name")
+		# name = self._glos.getInfo("name")
 
 		log.info(f"Creating .mobi file with kindlegen, using {kindlegen_path!r}")
 		opf_path_abs = join(filename, "OEBPS", "content.opf")
@@ -340,7 +361,7 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			[kindlegen_path, opf_path_abs, "-gen_ff_mobi7", "-o", "content.mobi"],
 			stdout=subprocess.PIPE,
 			stdin=subprocess.PIPE,
-			stderr=subprocess.PIPE
+			stderr=subprocess.PIPE,
 		)
 		output = proc.communicate()
 		log.info(output[0].decode("utf-8"))

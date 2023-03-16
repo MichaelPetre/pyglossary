@@ -18,12 +18,22 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
+import os
+import typing
+from os.path import dirname, isdir, isfile, join
+from typing import Generator, Iterator
 
-from pyglossary.plugins.formats_common import *
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
 from pyglossary.text_utils import (
 	escapeNTB,
-	unescapeNTB,
 	splitByBarUnescapeNTB,
+	unescapeNTB,
 )
 
 enable = True
@@ -36,7 +46,7 @@ extensionCreate = ".edlin/"
 kind = "directory"
 wiki = ""
 website = None
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"prev_link": BoolOption(comment="Enable link to previous entry"),
 }
@@ -50,22 +60,22 @@ def makeDir(direc: str) -> None:
 class Reader(object):
 	_encoding: str = "utf-8"
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._clear()
 
-	def close(self) -> None:
+	def close(self: "typing.Self") -> None:
 		self._clear()
 
-	def _clear(self) -> None:
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ""
 		self._prev_link = True
 		self._wordCount = None
 		self._rootPath = None
 		self._resDir = ""
-		self._resFileNames = []
+		self._resFileNames: "list[str]" = []
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		from pyglossary.json_utils import jsonToOrderedData
 		if isdir(filename):
 			infoFname = join(filename, "info.json")
@@ -74,7 +84,7 @@ class Reader(object):
 			filename = dirname(filename)
 		else:
 			raise ValueError(
-				f"error while opening {filename!r}: no such file or directory"
+				f"error while opening {filename!r}: no such file or directory",
 			)
 		self._filename = filename
 
@@ -93,13 +103,13 @@ class Reader(object):
 			self._resDir = ""
 			self._resFileNames = []
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		if self._wordCount is None:
 			log.error("called len() on a reader which is not open")
 			return 0
 		return self._wordCount + len(self._resFileNames)
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if not self._rootPath:
 			raise RuntimeError("iterating over a reader while it's not open")
 
@@ -128,7 +138,7 @@ class Reader(object):
 				if not defi:
 					log.warning(
 						f"Edlin Reader: no definition for word {word!r}"
-						f", skipping"
+						f", skipping",
 					)
 					yield None  # update progressbar
 					continue
@@ -148,7 +158,7 @@ class Reader(object):
 		if wordCount != self._wordCount:
 			log.warning(
 				f"{wordCount} words found, "
-				f"wordCount in info.json was {self._wordCount}"
+				f"wordCount in info.json was {self._wordCount}",
 			)
 			self._wordCount = wordCount
 
@@ -165,37 +175,37 @@ class Writer(object):
 	_encoding: str = "utf-8"
 	_prev_link: bool = True
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._clear()
 
-	def finish(self) -> None:
+	def finish(self: "typing.Self") -> None:
 		self._clear()
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		self._resDir = join(filename, "res")
 		os.makedirs(filename)
 		os.mkdir(self._resDir)
 
-	def _clear(self) -> None:
-		self._filename = None
-		self._resDir = None
+	def _clear(self: "typing.Self") -> None:
+		self._filename = ""
+		self._resDir = ""
 		self._encoding = "utf-8"
-		self._hashSet = set()
+		self._hashSet: "set[str]" = set()
 		# self._wordCount = None
 
-	def hashToPath(self, h: str) -> str:
+	def hashToPath(self: "typing.Self", h: str) -> str:
 		return h[:2] + "/" + h[2:]
 
-	def getEntryHash(self, entry: BaseEntry) -> str:
+	def getEntryHash(self: "typing.Self", entry: EntryType) -> str:
 		"""
 		return hash string for given entry
 		don't call it twice for one entry, if you do you will get a
 		different hash string
 		"""
 		from hashlib import sha1
-		_hash = sha1(entry.s_word.encode("utf-8")).hexdigest()[:8]
+		_hash = sha1(entry.s_word.encode("utf-8")).hexdigest()[:8]  # noqa: S324
 		if _hash not in self._hashSet:
 			self._hashSet.add(_hash)
 			return _hash
@@ -208,11 +218,11 @@ class Writer(object):
 			index += 1
 
 	def saveEntry(
-		self,
-		thisEntry: BaseEntry,
+		self: "typing.Self",
+		thisEntry: EntryType,
 		thisHash: str,
-		prevHash: str,
-		nextHash: str,
+		prevHash: "str | None",
+		nextHash: "str | None",
 	) -> None:
 		dpath = join(self._filename, thisHash[:2])
 		makeDir(dpath)
@@ -233,11 +243,10 @@ class Writer(object):
 				thisEntry.defi,
 			]))
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		from collections import OrderedDict as odict
-		from pyglossary.json_utils import dataToPrettyJson
 
-		filename = self._filename
+		from pyglossary.json_utils import dataToPrettyJson
 
 		thisEntry = yield
 		if thisEntry is None:

@@ -1,14 +1,23 @@
 # -*- coding: utf-8 -*-
 
-import os
 import logging
+import os
+from os.path import join
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	import io
+	from typing import Callable
+
+	from .glossary_types import GlossaryType
+
 
 stdCompressions = ("gz", "bz2", "lzma")
 
 log = logging.getLogger("pyglossary")
 
 
-def compressionOpenFunc(c: str):
+def compressionOpenFunc(c: str) -> "Callable | None":
 	if not c:
 		return open
 	if c == "gz":
@@ -26,7 +35,11 @@ def compressionOpenFunc(c: str):
 	return None
 
 
-def compressionOpen(filename, dz=False, **kwargs):
+def compressionOpen(
+	filename: str,
+	dz: bool = False,
+	**kwargs,  # noqa: ANN003
+) -> "io.IOBase":
 	from os.path import splitext
 	filenameNoExt, ext = splitext(filename)
 	ext = ext.lower().lstrip(".")
@@ -38,23 +51,27 @@ def compressionOpen(filename, dz=False, **kwargs):
 		_, ext = splitext(filenameNoExt)
 		ext = ext.lower().lstrip(".")
 	if ext in stdCompressions or (dz and ext == "dz"):
-		_file = compressionOpenFunc(ext)(filename, **kwargs)
+		openFunc = compressionOpenFunc(ext)
+		if not openFunc:
+			raise RuntimeError(f"no compression found for {ext=}")
+		_file = openFunc(filename, **kwargs)
 		_file.compression = ext
 		return _file
-	return open(filename, **kwargs)
+	return open(filename, **kwargs)  # noqa: SIM115
 
 
-def zipFileOrDir(glos: "GlossaryType", filename: str) -> "Optional[str]":
-	import zipfile
+def zipFileOrDir(glos: "GlossaryType", filename: str) -> None:
 	import shutil
+	import zipfile
 	from os.path import (
-		isfile,
 		isdir,
+		isfile,
 		split,
 	)
+
 	from .os_utils import indir
 
-	def _zipFileAdd(zf, filename):
+	def _zipFileAdd(zf: "zipfile.ZipFile", filename: str) -> None:
 		if isfile(filename):
 			zf.write(filename)
 			return
@@ -97,7 +114,10 @@ def compress(glos: "GlossaryType", filename: str, compression: str) -> str:
 
 	compFilename = f"{filename}.{compression}"
 	if compression in stdCompressions:
-		with compressionOpenFunc(compression)(compFilename, mode="wb") as dest:
+		openFunc = compressionOpenFunc(compression)
+		if not openFunc:
+			raise RuntimeError(f"invalid {compression=}")
+		with openFunc(compFilename, mode="wb") as dest:
 			with open(filename, mode="rb") as source:
 				shutil.copyfileobj(source, dest)
 		return compFilename
@@ -108,18 +128,21 @@ def compress(glos: "GlossaryType", filename: str, compression: str) -> str:
 		except OSError:
 			pass
 		try:
-			error = zipFileOrDir(glos, filename)
+			zipFileOrDir(glos, filename)
 		except Exception as e:
 			log.error(
-				f"{e}\nFailed to compress file \"{filename}\""
+				f"{e}\nFailed to compress file \"{filename}\"",
 			)
+		#else:
+		#	if error:
+		#		log.error(error)
 	else:
 		raise ValueError(f"unexpected {compression=}")
 
 	if isfile(compFilename):
 		return compFilename
-	else:
-		return filename
+
+	return filename
 
 
 def uncompress(srcFilename: str, dstFilename: str, compression: str) -> None:
@@ -131,10 +154,13 @@ def uncompress(srcFilename: str, dstFilename: str, compression: str) -> None:
 	log.info(f"Uncompressing {srcFilename!r} to {dstFilename!r}")
 
 	if compression in stdCompressions:
-		with compressionOpenFunc(compression)(srcFilename, mode="rb") as source:
+		openFunc = compressionOpenFunc(compression)
+		if not openFunc:
+			raise RuntimeError(f"invalid {compression=}")
+		with openFunc(srcFilename, mode="rb") as source:
 			with open(dstFilename, mode="wb") as dest:
 				shutil.copyfileobj(source, dest)
 		return
 
 	# TODO: if compression == "zip":
-	raise ValueError(f"unexpected {compression=}")
+	raise ValueError(f"unsupported compression {compression!r}")

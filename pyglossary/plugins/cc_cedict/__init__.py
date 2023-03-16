@@ -1,5 +1,16 @@
+import io
 import re
-from pyglossary.plugins.formats_common import *
+import typing
+from typing import Iterator
+
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	Option,
+)
+
 from . import conv
 
 enable = True
@@ -15,7 +26,7 @@ website = (
 	"https://cc-cedict.org/editor/editor.php",
 	"CC-CEDICT Editor",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"traditional_title": BoolOption(
 		comment="Use traditional Chinese for entry titles/keys",
@@ -33,12 +44,13 @@ class Reader:
 	_encoding: str = "utf-8"
 	_traditional_title: bool = False
 
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
-		self.file = None
-		self.total_entries = self.entries_left = None
+		self.file: "io.TextIOBase | None" = None
+		self.total_entries: "int | None" = None
+		self.entries_left = 0
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		if self.file is not None:
 			self.file.close()
 
@@ -56,24 +68,25 @@ class Reader:
 			self.close()
 			raise RuntimeError("CC-CEDICT: could not find entry count")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self.file is not None:
 			self.file.close()
 		self.file = None
-		self.total_entries = self.entries_left = None
+		self.total_entries = None
+		self.entries_left = 0
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		if self.total_entries is None:
 			raise RuntimeError(
 				"CC-CEDICT: len(reader) called while reader is not open",
 			)
 		return self.total_entries
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		if self.file is None:
 			raise RuntimeError(
-				"CC-CEDICT: tried to iterate over entries " +
-				"while reader is not open"
+				"CC-CEDICT: tried to iterate over entries "
+				"while reader is not open",
 			)
 		for line in self.file:
 			if line.startswith("#"):

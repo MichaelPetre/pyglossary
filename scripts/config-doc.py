@@ -1,16 +1,15 @@
-#!/usr/bin/python3
+#!/usr/bin/env python
 
-import sys
 import json
 import re
-from os.path import join, dirname, abspath
-from pprint import pprint
+import sys
+from os.path import abspath, dirname, join
+
 from mako.template import Template
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from pyglossary.core import userPluginsDir
 from pyglossary.ui.base import UIBase
 
 ui = UIBase()
@@ -45,10 +44,10 @@ For example:
 
 .. code:: python
 
-    glos = Glossary()
-    glos.config = {
-        "lower": True,
-    }
+	glos = Glossary()
+	glos.config = {
+		"lower": True,
+	}
 """)
 
 with open(join(rootDir, "scripts/term-colors.json")) as _file:
@@ -110,7 +109,7 @@ def renderTable(rows):
 
 def getCommandFlagsMD(name, opt):
 	if name.startswith("color.enable.cmd."):
-		return f"``--no-color``"
+		return "``--no-color``"
 
 	if not opt.hasFlag:
 		return ""
@@ -133,7 +132,7 @@ def optionComment(name, opt):
 	if name.startswith("color.cmd."):
 		comment = f"| {comment}\n| See `term-colors.md <./term-colors.md/>`_"
 
-	return comment
+	return comment  # noqa: RET504
 
 
 def jsonCodeValue(value):
@@ -150,7 +149,7 @@ def defaultOptionValue(name, opt, images):
 		_hex = termColors[str(value)].lstrip("#")
 		imageI = f"image{len(images)}"
 		images.append(
-			f".. |{imageI}| image:: https://via.placeholder.com/20/{_hex}/000000?text=+"
+			f".. |{imageI}| image:: https://via.placeholder.com/20/{_hex}/000000?text=+",
 		)
 		valueMD += f"\n|{imageI}|"
 

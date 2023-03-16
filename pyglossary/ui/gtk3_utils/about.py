@@ -1,3 +1,6 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
@@ -14,24 +17,24 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-
-from . import *
+from . import gtk
 from .utils import (
-	imageFromFile,
 	VBox,
+	imageFromFile,
 	pack,
 )
 
+
 class AboutWidget(gtk.Box):
 	def __init__(
-		self,
+		self: "typing.Self",
 		logo: str = "",
 		header: str = "",
 		about: str = "",
 		authors: str = "",
 		license: str = "",
 		**kwargs,
-	):
+	) -> None:
 		gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL)
 		##
 		headerBox = gtk.Box(orientation=gtk.Orientation.HORIZONTAL)
@@ -67,10 +70,10 @@ class AboutWidget(gtk.Box):
 
 	# <a href="...">Something</a> does not work with TextView
 	def newTabWidgetTextView(
-		self,
+		self: "typing.Self",
 		text: str,
 		wrap: bool = False,
-		justification: "Optional[gtk.Justification]" = None,
+		justification: "gtk.Justification | None" = None,
 	):
 		tv = gtk.TextView()
 		tv.set_editable(False)
@@ -92,10 +95,10 @@ class AboutWidget(gtk.Box):
 		return swin
 
 	def newTabLabelWidget(
-		self,
+		self: "typing.Self",
 		text: str,
 		wrap: bool = False,
-		justification: "Optional[gtk.Justification]" = None,
+		justification: "gtk.Justification | None" = None,
 	):
 		box = VBox()
 		box.set_border_width(10)
@@ -118,7 +121,7 @@ class AboutWidget(gtk.Box):
 		swin.add(box)
 		return swin
 
-	def newTabTitle(self, title: str, icon: str):
+	def newTabTitle(self: "typing.Self", title: str, icon: str):
 		box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
 		if icon:
 			box.pack_start(imageFromFile(icon), False, False, 5)
@@ -126,4 +129,3 @@ class AboutWidget(gtk.Box):
 			box.pack_start(gtk.Label(label=title), False, False, 5)
 		box.show_all()
 		return box
-

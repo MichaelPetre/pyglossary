@@ -1,19 +1,19 @@
 #!/usr/bin/python3
 
 import sys
-from os.path import dirname, abspath
+import typing
 import unittest
-import logging
+from os.path import abspath, dirname
+from typing import Optional
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from pyglossary.entry import *
-from pyglossary.core_test import getMockLogger
+from pyglossary.entry import Entry
 
 
 class TestEntryBasic(unittest.TestCase):
-	def test_exc_1(self):
+	def test_exc_1(self: "typing.Self"):
 		try:
 			Entry(b"word", "defi")
 		except TypeError as e:
@@ -21,15 +21,10 @@ class TestEntryBasic(unittest.TestCase):
 		else:
 			self.fail("must raise TypeError")
 
-	def test_exc_2(self):
-		try:
-			Entry(("word",), "defi")
-		except TypeError as e:
-			self.assertEqual(str(e), "invalid word type <class 'tuple'>")
-		else:
-			self.fail("must raise TypeError")
+	def test_exc_2(self: "typing.Self"):
+		Entry(("word",), "defi")
 
-	def test_exc_3(self):
+	def test_exc_3(self: "typing.Self"):
 		try:
 			Entry("word", b"defi")
 		except TypeError as e:
@@ -37,7 +32,7 @@ class TestEntryBasic(unittest.TestCase):
 		else:
 			self.fail("must raise TypeError")
 
-	def test_exc_4(self):
+	def test_exc_4(self: "typing.Self"):
 		try:
 			Entry("word", ("defi",))
 		except TypeError as e:
@@ -45,7 +40,7 @@ class TestEntryBasic(unittest.TestCase):
 		else:
 			self.fail("must raise TypeError")
 
-	def test_exc_5(self):
+	def test_exc_5(self: "typing.Self"):
 		try:
 			Entry("word", "defi", "b")
 		except ValueError as e:
@@ -53,49 +48,49 @@ class TestEntryBasic(unittest.TestCase):
 		else:
 			self.fail("must raise ValueError")
 
-	def test_1(self):
+	def test_1(self: "typing.Self"):
 		entry = Entry("test1", "something")
 		self.assertEqual(entry.l_word, ["test1"])
 		self.assertEqual(entry.defi, "something")
 
-	def test_2(self):
+	def test_2(self: "typing.Self"):
 		entry = Entry(["test1"], "something")
 		self.assertEqual(entry.l_word, ["test1"])
 		self.assertEqual(entry.defi, "something")
 
-	def test_3(self):
+	def test_3(self: "typing.Self"):
 		entry = Entry("test1", ["something"])
 		self.assertEqual(entry.l_word, ["test1"])
 		self.assertEqual(entry.defi, "something")
 
-	def test_repr_1(self):
+	def test_repr_1(self: "typing.Self"):
 		entry = Entry("test1", "something")
 		self.assertEqual(
 			repr(entry),
 			"Entry('test1', 'something', defiFormat='m')",
 		)
 
-	def test_repr_1(self):
+	def test_repr_2(self: "typing.Self"):
 		entry = Entry("test1", "something", defiFormat="h")
 		self.assertEqual(
 			repr(entry),
 			"Entry('test1', 'something', defiFormat='h')",
 		)
 
-	def test_defiFormat_1(self):
+	def test_defiFormat_1(self: "typing.Self"):
 		entry = Entry("test1", "something")
 		self.assertEqual(entry.defiFormat, "m")
 
-	def test_defiFormat_2(self):
+	def test_defiFormat_2(self: "typing.Self"):
 		entry = Entry("test1", "something", defiFormat="h")
 		self.assertEqual(entry.defiFormat, "h")
 
-	def test_defiFormat_3(self):
+	def test_defiFormat_3(self: "typing.Self"):
 		entry = Entry("test1", "something", defiFormat="h")
 		entry.defiFormat = "x"
 		self.assertEqual(entry.defiFormat, "x")
 
-	def test_addAlt_1(self):
+	def test_addAlt_1(self: "typing.Self"):
 		entry = Entry("test1", "something")
 		self.assertEqual(entry.l_word, ["test1"])
 		entry.addAlt("test 1")
@@ -103,113 +98,108 @@ class TestEntryBasic(unittest.TestCase):
 
 
 class TestEntryDetectDefiFormat(unittest.TestCase):
-	def test_1(self):
+	def test_1(self: "typing.Self"):
 		entry = Entry("test1", "something")
 		entry.detectDefiFormat()
 		self.assertEqual(entry.defiFormat, "m")
 
-	def test_2(self):
+	def test_2(self: "typing.Self"):
 		entry = Entry("test1", "something", defiFormat="h")
 		entry.detectDefiFormat()
 		self.assertEqual(entry.defiFormat, "h")
 
-	def test_3(self):
+	def test_3(self: "typing.Self"):
 		entry = Entry("test1", "something", defiFormat="x")
 		entry.detectDefiFormat()
 		self.assertEqual(entry.defiFormat, "x")
 
-	def test_4(self):
+	def test_4(self: "typing.Self"):
 		entry = Entry("test1", "<b>something</b>")
 		entry.detectDefiFormat()
 		self.assertEqual(entry.defiFormat, "h")
 
-	def test_5(self):
+	def test_5(self: "typing.Self"):
 		entry = Entry("test1", "<k>title</k>something")
 		entry.detectDefiFormat()
 		self.assertEqual(entry.defiFormat, "x")
 
 
 class TestEntryStripFullHtml(unittest.TestCase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		unittest.TestCase.__init__(self, *args, **kwargs)
-		self.mockLog = getMockLogger()
 
-	def setUp(self):
-		self.mockLog.clear()
+	def setUp(self: "typing.Self"):
+		pass
 
-	def tearDown(self):
-		self.assertEqual(0, self.mockLog.printRemainingErrors())
+	def tearDown(self: "typing.Self"):
+		pass
 
 	def case(
-		self,
+		self: "typing.Self",
 		word: str,
 		origDefi: str,
 		fixedDefi: str,
-		logMsg: str = "",
-		logLevel: int = logging.ERROR,
+		error: "Optional[str]" = None,
 	):
 		entry = Entry(word, origDefi)
-		entry.stripFullHtml()
+		actualError = entry.stripFullHtml()
 		self.assertEqual(entry.defi, fixedDefi)
-		if logMsg:
-			record = self.mockLog.popLog(logLevel, logMsg)
-			self.assertIsNotNone(record, msg=f"{logMsg=}")
+		self.assertEqual(actualError, error)
 
-	def test_1(self):
+	def test_1(self: "typing.Self"):
 		self.case(
 			word="test1",
 			origDefi="plain text",
 			fixedDefi="plain text",
-			logMsg="",
+			error=None,
 		)
 
-	def test_2(self):
+	def test_2(self: "typing.Self"):
 		self.case(
 			word="test2",
 			origDefi="<p>simple <i>html</i> text</p>",
 			fixedDefi="<p>simple <i>html</i> text</p>",
-			logMsg="",
+			error=None,
 		)
 
-	def test_3(self):
+	def test_3(self: "typing.Self"):
 		self.case(
 			word="test3",
 			origDefi="<!DOCTYPE html><html><head></head><body>simple <i>html</i></body></html>",
 			fixedDefi="simple <i>html</i>",
-			logMsg="",
+			error=None,
 		)
 
-	def test_4(self):
+	def test_4(self: "typing.Self"):
 		self.case(
 			word="test4",
 			origDefi="<html><head></head><body>simple <i>html</i></body></html>",
 			fixedDefi="simple <i>html</i>",
-			logMsg="",
+			error=None,
 		)
 
-	def test_5(self):
+	def test_5(self: "typing.Self"):
 		self.case(
 			word="test5",
 			origDefi="<!DOCTYPE html><html><head></head>simple <i>html</i></html>",
 			fixedDefi="<!DOCTYPE html><html><head></head>simple <i>html</i></html>",
-			logMsg="<body not found: word='test5'",
-			logLevel=logging.WARNING,
+			error="<body not found",
 		)
 
-	def test_6(self):
+	def test_6(self: "typing.Self"):
 		self.case(
 			word="test6",
 			origDefi="<html><head></head>no <body",
 			fixedDefi="<html><head></head>no <body",
-			logMsg="'>' after <body not found: word='test6'",
+			error="'>' after <body not found",
 		)
 
-	def test_7(self):
+	def test_7(self: "typing.Self"):
 		self.case(
 			word="test7",
 			origDefi="<html><head></head><body>",
 			fixedDefi="<html><head></head><body>",
-			logMsg="</body close not found: word='test7'",
+			error="</body close not found",
 		)
 
 

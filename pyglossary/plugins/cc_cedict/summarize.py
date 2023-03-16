@@ -27,16 +27,15 @@ stops = {
 	"very", "s", "t", "can", "will", "just", "don", "should", "now", "d",
 	"ll", "m", "o", "re", "ve", "y", "ain", "aren", "couldn", "didn", "doesn",
 	"hadn", "hasn", "haven", "isn", "ma", "mightn", "mustn", "needn", "shan",
-	"shouldn", "wasn", "weren", "won", "wouldn"
+	"shouldn", "wasn", "weren", "won", "wouldn",
 }
 
 
-def summarize(phrase):
+def summarize(phrase: str) -> str:
 	phrase = parenthetical.sub("", phrase)
 	phrase = phrase.translate(punct_table)
 	words = phrase.split()
 	relevant_words = [word for word in words if word not in stops]
 	if not relevant_words:
 		relevant_words = words
-	summary = " ".join(relevant_words[:10])
-	return summary
+	return " ".join(relevant_words[:10])

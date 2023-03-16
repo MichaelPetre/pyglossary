@@ -95,7 +95,7 @@ def to_jd(year: int, month: int, day: int) -> int:
 	)
 
 
-def jd_to(jd: int) -> "Tuple[int, int, int]":
+def jd_to(jd: int) -> "tuple[int, int, int]":
 	ordinal = int(jd) - 1721425
 	if 0 < ordinal < 3652060:  # > 4x faster
 		# datetime(9999, 12, 31).toordinal() == 3652059

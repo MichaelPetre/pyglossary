@@ -1,10 +1,23 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import os
+import typing
+from os.path import isdir, join
+from typing import Generator, Iterator
+
+from pyglossary.compression import stdCompressions
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	EncodingOption,
+	FileSizeOption,
+	Option,
+)
 from pyglossary.text_reader import TextGlossaryReader
 from pyglossary.text_utils import (
-	unescapeNTB,
 	splitByBarUnescapeNTB,
+	unescapeNTB,
 )
 
 enable = True
@@ -17,7 +30,7 @@ singleFile = True
 kind = "text"
 wiki = "https://en.wikipedia.org/wiki/Tab-separated_values"
 website = None
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"enable_info": BoolOption(
 		comment="Enable glossary info / metedata",
@@ -35,19 +48,19 @@ optionsProp = {
 
 
 class Reader(TextGlossaryReader):
-	def __init__(self, glos: GlossaryType, hasInfo: bool = True):
+	def __init__(self: "typing.Self", glos: GlossaryType, hasInfo: bool = True) -> None:
 		TextGlossaryReader.__init__(self, glos, hasInfo=hasInfo)
 		self._resDir = ""
 		self._resFileNames = []
 
-	def open(self, filename: str) -> None:
-		TextGlossaryReader.open(self, filename)
+	def open(self: "typing.Self", filename: str) -> "Iterator[tuple[int, int]]":
+		yield from TextGlossaryReader.openGen(self, filename)
 		resDir = f"{filename}_res"
 		if isdir(resDir):
 			self._resDir = resDir
 			self._resFileNames = os.listdir(self._resDir)
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		yield from TextGlossaryReader.__iter__(self)
 		resDir = self._resDir
 		for fname in self._resFileNames:
@@ -57,13 +70,13 @@ class Reader(TextGlossaryReader):
 					_file.read(),
 				)
 
-	def isInfoWord(self, word: str) -> bool:
+	def isInfoWord(self: "typing.Self", word: str) -> bool:
 		return word.startswith("#")
 
-	def fixInfoWord(self, word: str) -> str:
+	def fixInfoWord(self: "typing.Self", word: str) -> str:
 		return word.lstrip("#")
 
-	def nextBlock(self) -> "Optional[Tuple[str, str, None]]":
+	def nextBlock(self: "typing.Self") -> "tuple[str, str, None] | None":
 		if not self._file:
 			raise StopIteration
 		line = self.readline()
@@ -71,14 +84,14 @@ class Reader(TextGlossaryReader):
 			raise StopIteration
 		line = line.rstrip("\n")
 		if not line:
-			return
+			return None
 		###
 		word, tab, defi = line.partition("\t")
 		if not tab:
 			log.error(
-				f"Warning: line starting with {line[:10]!r} has no tab!"
+				f"Warning: line starting with {line[:10]!r} has no tab!",
 			)
-			return
+			return None
 		###
 		if self._glos.alts:
 			word = splitByBarUnescapeNTB(word)
@@ -101,22 +114,22 @@ class Writer(object):
 
 	compressions = stdCompressions
 
-	def __init__(self, glos: GlossaryType) -> None:
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = None
 
 	def open(
-		self,
+		self: "typing.Self",
 		filename: str,
-	):
+	) -> None:
 		self._filename = filename
 
-	def finish(self):
+	def finish(self: "typing.Self") -> None:
 		pass
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
-		from pyglossary.text_writer import TextGlossaryWriter
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		from pyglossary.text_utils import escapeNTB, joinByBar
+		from pyglossary.text_writer import TextGlossaryWriter
 		writer = TextGlossaryWriter(
 			self._glos,
 			entryFmt="{word}\t{defi}\n",
@@ -131,7 +144,7 @@ class Writer(object):
 			ext=".txt",
 			resources=self._resources,
 			word_title=self._word_title,
-			file_size_approx=self._file_size_approx
+			file_size_approx=self._file_size_approx,
 		)
 		writer.open(self._filename)
 		yield from writer.write()

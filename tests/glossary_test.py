@@ -1,27 +1,26 @@
 #!/usr/bin/python3
 
-import sys
-import os
-from os.path import join, dirname, abspath, isdir, isfile
-import unittest
-import tempfile
-import logging
-from urllib.request import urlopen
-import zipfile
-import random
 import hashlib
-import tracemalloc
+import logging
 import os
+import random
+import sys
+import tempfile
+import tracemalloc
+import typing
+import unittest
+import zipfile
+from os.path import abspath, dirname, isdir, isfile, join
+from typing import Callable, Optional
+from urllib.request import urlopen
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
-from pyglossary.glossary import Glossary, log
-from pyglossary.entry import Entry
-from pyglossary.core import cacheDir
+from pyglossary.core import cacheDir, log
+from pyglossary.glossary import Glossary
 from pyglossary.os_utils import rmtree
 from pyglossary.text_utils import crc32hex
-
 
 tracemalloc.start()
 
@@ -43,7 +42,7 @@ os.chdir(dataDir)
 
 
 class TestGlossaryBase(unittest.TestCase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		unittest.TestCase.__init__(self, *args, **kwargs)
 		self.maxDiff = None
 		self.dataFileCRC32 = {
@@ -68,14 +67,18 @@ class TestGlossaryBase(unittest.TestCase):
 			"res/test.json": "41f8cf31",
 		}
 
+	def addDirCRC32(self: "typing.Self", dirPath: str, files: "dict[str, str]") -> None:
+		for fpath, _hash in files.items():
+			self.dataFileCRC32[f"{dirPath}/{fpath}"] = _hash
+
 	# The setUp() and tearDown() methods allow you to define instructions that
 	# will be executed before and after each test method.
 
-	def setUp(self):
+	def setUp(self: "typing.Self"):
 		self.glos = None
 		self.tempDir = tempfile.mkdtemp(dir=dataDir)
 
-	def tearDown(self):
+	def tearDown(self: "typing.Self"):
 		if self.glos is not None:
 			self.glos.cleanup()
 			self.glos.clear()
@@ -88,9 +91,13 @@ class TestGlossaryBase(unittest.TestCase):
 			if isdir(direc):
 				rmtree(direc)
 
-	def downloadFile(self, filename):
-		_crc32 = self.dataFileCRC32[filename]
-		fpath = join(dataDir, filename.replace("/", "__"))
+	def fixDownloadFilename(self: "typing.Self", filename):
+		return filename.replace("/", "__").replace("\\", "__")
+
+	def downloadFile(self: "typing.Self", filename):
+		unixFilename = filename.replace("\\", "/")
+		_crc32 = self.dataFileCRC32[unixFilename]
+		fpath = join(dataDir, self.fixDownloadFilename(filename))
 		if isfile(fpath):
 			with open(fpath, mode="rb") as _file:
 				data = _file.read()
@@ -98,42 +105,68 @@ class TestGlossaryBase(unittest.TestCase):
 				raise RuntimeError(f"CRC32 check failed for existing file: {fpath}")
 			return fpath
 		try:
-			with urlopen(dataURL.format(filename=filename)) as res:
+			with urlopen(dataURL.format(filename=unixFilename)) as res:
 				data = res.read()
 		except Exception as e:
-			e.msg += f", {filename=}"
-			raise e
-		if crc32hex(data) != _crc32:
-			raise RuntimeError(f"CRC32 check failed for downloaded file: {filename}")
+			print(f"{filename=}")
+			raise e from None
+		actual_crc32 = crc32hex(data)
+		if actual_crc32 != _crc32:
+			raise RuntimeError(
+				"CRC32 check failed for downloaded file: "
+				f"{filename}: {actual_crc32}",
+			)
 		with open(fpath, mode="wb") as _file:
 			_file.write(data)
 		return fpath
 
-	def newTempFilePath(self, filename):
+	def downloadDir(self: "typing.Self", dirName: str, files: "list[str]") -> str:
+		dirPath = join(dataDir, self.fixDownloadFilename(dirName))
+		for fileRelPath in files:
+			newFilePath = join(dirPath, fileRelPath)
+			if isfile(newFilePath):
+				# TODO: check crc-32
+				continue
+			filePath = self.downloadFile(join(dirName, fileRelPath))
+			os.makedirs(dirname(newFilePath), exist_ok=True)
+			os.rename(filePath, newFilePath)
+		return dirPath
+
+	def newTempFilePath(self: "typing.Self", filename):
 		fpath = join(self.tempDir, filename)
 		if isfile(fpath):
 			os.remove(fpath)
 		return fpath
 
-	def compareTextFiles(self, fpath1, fpath2):
-		self.assertTrue(isfile(fpath1))
-		self.assertTrue(isfile(fpath2))
-		with open(fpath1) as file1:
-			text1 = file1.read().rstrip("\n")
-		with open(fpath2) as file2:
-			text2 = file2.read().rstrip("\n")
-		self.assertEqual(
-			len(text1),
-			len(text2),
-			msg=f"{fpath1} differs from {fpath2} in file size",
-		)
-		self.assertEqual(
-			text1,
-			text2,
-			msg=f"{fpath1} differs from {fpath2}",
-		)
+	def showGlossaryDiff(self: "typing.Self", fpath1, fpath2) -> None:
+		from pyglossary.ui.tools.diff_glossary import diffGlossary
+		diffGlossary(fpath1, fpath2)
 
-	def compareBinaryFiles(self, fpath1, fpath2):
+	def compareTextFiles(self: "typing.Self", fpath1, fpath2, showDiff=False):
+		self.assertTrue(isfile(fpath1), f"{fpath1 = }")
+		self.assertTrue(isfile(fpath2), f"{fpath2 = }")
+		with open(fpath1, encoding="utf-8") as file1:
+			text1 = file1.read().rstrip("\n")
+		with open(fpath2, encoding="utf-8") as file2:
+			text2 = file2.read().rstrip("\n")
+
+		try:
+			self.assertEqual(
+				len(text1),
+				len(text2),
+				msg=f"{fpath1} differs from {fpath2} in file size",
+			)
+			self.assertEqual(
+				text1,
+				text2,
+				msg=f"{fpath1} differs from {fpath2}",
+			)
+		except AssertionError as e:
+			if showDiff:
+				self.showGlossaryDiff(fpath1, fpath2)
+			raise e from None
+
+	def compareBinaryFiles(self: "typing.Self", fpath1, fpath2):
 		self.assertTrue(isfile(fpath1), f"File {fpath1} does not exist")
 		self.assertTrue(isfile(fpath2), f"File {fpath2} does not exist")
 		with open(fpath1, mode="rb") as file1:
@@ -147,10 +180,10 @@ class TestGlossaryBase(unittest.TestCase):
 		)
 
 	def compareZipFiles(
-		self,
+		self: "typing.Self",
 		fpath1,
 		fpath2,
-		dataReplaceFuncs: "Dict[str: Callable",
+		dataReplaceFuncs: "dict[str, Callable]",
 	):
 		zf1 = zipfile.ZipFile(fpath1)
 		zf2 = zipfile.ZipFile(fpath2)
@@ -173,15 +206,15 @@ class TestGlossaryBase(unittest.TestCase):
 			)
 
 	def checkZipFileSha1sum(
-		self,
+		self: "typing.Self",
 		fpath,
-		sha1sumDict: "Dict[str, str]",
-		dataReplaceFuncs: "Optional[Dict[str, Callable]]" = None,
+		sha1sumDict: "dict[str, str]",
+		dataReplaceFuncs: "Optional[dict[str, Callable]]" = None,
 	):
 		if dataReplaceFuncs is None:
 			dataReplaceFuncs = {}
 		zf = zipfile.ZipFile(fpath)
-		pathList = zf.namelist()
+		# pathList = zf.namelist()
 		for zfpath, expectedSha1 in sha1sumDict.items():
 			data = zf.read(zfpath)
 			func = dataReplaceFuncs.get(zfpath)
@@ -191,7 +224,7 @@ class TestGlossaryBase(unittest.TestCase):
 			self.assertEqual(actualSha1, expectedSha1, msg=f"file: {zfpath}")
 
 	def convert(
-		self,
+		self: "typing.Self",
 		fname,  # input file with extension
 		fname2,  # output file with extension
 		testId="tmp",
@@ -200,6 +233,7 @@ class TestGlossaryBase(unittest.TestCase):
 		sha1sum=None,
 		md5sum=None,
 		config=None,
+		showDiff=False,
 		**convertArgs,
 	):
 		inputFilename = self.downloadFile(fname)
@@ -210,12 +244,16 @@ class TestGlossaryBase(unittest.TestCase):
 		res = glos.convert(
 			inputFilename=inputFilename,
 			outputFilename=outputFilename,
-			**convertArgs
+			**convertArgs,
 		)
 		self.assertEqual(outputFilename, res)
 
 		if compareText:
-			self.compareTextFiles(outputFilename, self.downloadFile(compareText))
+			self.compareTextFiles(
+				outputFilename,
+				self.downloadFile(compareText),
+				showDiff=showDiff,
+			)
 		elif compareBinary:
 			self.compareBinaryFiles(outputFilename, self.downloadFile(compareBinary))
 		elif sha1sum:
@@ -228,9 +266,13 @@ class TestGlossaryBase(unittest.TestCase):
 				actualMd5 = hashlib.md5(_file.read()).hexdigest()
 			self.assertEqual(actualMd5, md5sum)
 
+	def convert_sqlite_both(self: "typing.Self", *args, **kwargs):
+		for sqlite in (None, True, False):
+			self.convert(*args, sqlite=sqlite, **kwargs)
+
 
 class TestGlossary(TestGlossaryBase):
-	def __init__(self, *args, **kwargs):
+	def __init__(self: "typing.Self", *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 
 		self.dataFileCRC32.update({
@@ -248,27 +290,33 @@ class TestGlossary(TestGlossaryBase):
 			"300-rand-en-fa-sort-headword-w1256.txt": "06d83bac",
 			"300-rand-en-fa-sort-headword.txt": "df0f8020",
 			"300-rand-en-fa-sort-w1256.txt": "9594aab3",
+
+			"sort-locale/092-en-fa-alphabet-sample.txt": "b4856532",
+			"sort-locale/092-en-fa-alphabet-sample-sorted-default.txt": "e7b70589",
+			"sort-locale/092-en-fa-alphabet-sample-sorted-en.txt": "3d2bdf73",
+			"sort-locale/092-en-fa-alphabet-sample-sorted-fa.txt": "245419db",
+			"sort-locale/092-en-fa-alphabet-sample-sorted-latin-fa.txt": "261c03c0",
 		})
 
-	def setUp(self):
+	def setUp(self: "typing.Self"):
 		TestGlossaryBase.setUp(self)
 		self.prevLogLevel = log.level
 		log.setLevel(logging.ERROR)
 
-	def tearDown(self):
+	def tearDown(self: "typing.Self"):
 		TestGlossaryBase.tearDown(self)
 		log.setLevel(self.prevLogLevel)
 
-	def test__str__1(self):
+	def test__str__1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(str(glos), "Glossary{filename: '', name: None}")
 
-	def test__str__2(self):
+	def test__str__2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos._filename = "test.txt"
 		self.assertEqual(str(glos), "Glossary{filename: 'test.txt', name: None}")
 
-	def test__str__3(self):
+	def test__str__3(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("title", "Test Title")
 		self.assertEqual(
@@ -276,7 +324,7 @@ class TestGlossary(TestGlossaryBase):
 			"Glossary{filename: '', name: 'Test Title'}",
 		)
 
-	def test__str__4(self):
+	def test__str__4(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos._filename = "test.txt"
 		glos.setInfo("title", "Test Title")
@@ -285,17 +333,17 @@ class TestGlossary(TestGlossaryBase):
 			"Glossary{filename: 'test.txt', name: 'Test Title'}",
 		)
 
-	def test_info_1(self):
+	def test_info_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("test", "ABC")
 		self.assertEqual(glos.getInfo("test"), "ABC")
 
-	def test_info_2(self):
+	def test_info_2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("bookname", "Test Glossary")
 		self.assertEqual(glos.getInfo("title"), "Test Glossary")
 
-	def test_info_3(self):
+	def test_info_3(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("bookname", "Test Glossary")
 		glos.setInfo("title", "Test 2")
@@ -303,24 +351,24 @@ class TestGlossary(TestGlossaryBase):
 		self.assertEqual(glos.getInfo("bookname"), "Test 2")
 		self.assertEqual(glos.getInfo("title"), "Test 2")
 
-	def test_info_4(self):
+	def test_info_4(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("test", 123)
 		self.assertEqual(glos.getInfo("test"), "123")
 
-	def test_info_del_1(self):
+	def test_info_del_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("test", "abc")
 		self.assertEqual(glos.getInfo("test"), "abc")
 		glos.setInfo("test", None)
 		self.assertEqual(glos.getInfo("test"), "")
 
-	def test_info_del_2(self):
+	def test_info_del_2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("test", None)
 		self.assertEqual(glos.getInfo("test"), "")
 
-	def test_setInfo_err1(self):
+	def test_setInfo_err1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		try:
 			glos.setInfo(1, "a")
@@ -329,7 +377,7 @@ class TestGlossary(TestGlossaryBase):
 		else:
 			self.fail("must raise a TypeError")
 
-	def test_getInfo_err1(self):
+	def test_getInfo_err1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		try:
 			glos.getInfo(1)
@@ -338,7 +386,7 @@ class TestGlossary(TestGlossaryBase):
 		else:
 			self.fail("must raise a TypeError")
 
-	def test_getExtraInfos_1(self):
+	def test_getExtraInfos_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("a", "test 1")
 		glos.setInfo("b", "test 2")
@@ -351,7 +399,7 @@ class TestGlossary(TestGlossaryBase):
 			{"a": "test 1", "d": "test 4"},
 		)
 
-	def test_infoKeys_1(self):
+	def test_infoKeys_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("a", "test 1")
 		glos.setInfo("b", "test 2")
@@ -363,7 +411,7 @@ class TestGlossary(TestGlossaryBase):
 			["a", "b", "name"],
 		)
 
-	def test_config_attr_get(self):
+	def test_config_attr_get(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		try:
 			glos.config
@@ -372,12 +420,12 @@ class TestGlossary(TestGlossaryBase):
 		else:
 			self.fail("must raise NotImplementedError")
 
-	def test_config_attr_set(self):
+	def test_config_attr_set(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.config = {"lower": True}
 		self.assertEqual(glos.getConfig("lower", False), True)
 
-	def test_read_txt_1(self):
+	def test_read_txt_1(self: "typing.Self"):
 		inputFilename = self.downloadFile("100-en-fa.txt")
 		glos = self.glos = Glossary()
 		res = glos.read(filename=inputFilename)
@@ -387,7 +435,7 @@ class TestGlossary(TestGlossaryBase):
 		self.assertIn("Sample: ", glos.getInfo("name"))
 		self.assertEqual(len(glos), 100)
 
-	def test_read_txt_direct_1(self):
+	def test_read_txt_direct_1(self: "typing.Self"):
 		inputFilename = self.downloadFile("100-en-fa.txt")
 		glos = self.glos = Glossary()
 		res = glos.read(filename=inputFilename, direct=True)
@@ -397,11 +445,11 @@ class TestGlossary(TestGlossaryBase):
 		self.assertIn("Sample: ", glos.getInfo("name"))
 		self.assertEqual(len(glos), 0)
 
-	def test_init_infoDict(self):
+	def test_init_infoDict(self: "typing.Self"):
 		glos = self.glos = Glossary(info={"a": "b"})
 		self.assertEqual(list(glos.iterInfo()), [('a', 'b')])
 
-	def test_init_infoOrderedDict(self):
+	def test_init_infoOrderedDict(self: "typing.Self"):
 		from collections import OrderedDict
 		glos = self.glos = Glossary(info=OrderedDict([
 			("y", "z"),
@@ -410,7 +458,7 @@ class TestGlossary(TestGlossaryBase):
 		]))
 		self.assertEqual(list(glos.iterInfo()), [('y', 'z'), ('a', 'b'), ('1', '2')])
 
-	def test_lang_1(self):
+	def test_lang_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(glos.sourceLangName, "")
 		self.assertEqual(glos.targetLangName, "")
@@ -419,47 +467,47 @@ class TestGlossary(TestGlossaryBase):
 		self.assertEqual(glos.sourceLangName, "Russian")
 		self.assertEqual(glos.targetLangName, "German")
 
-	def test_lang_get_source(self):
+	def test_lang_get_source(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("sourcelang", "farsi")
 		self.assertEqual(glos.sourceLangName, "Persian")
 
-	def test_lang_get_target(self):
+	def test_lang_get_target(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("targetlang", "malay")
 		self.assertEqual(glos.targetLangName, "Malay")
 
-	def test_lang_set_source(self):
+	def test_lang_set_source(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.sourceLangName = "en"
 		self.assertEqual(glos.sourceLangName, "English")
 
-	def test_lang_set_source_empty(self):
+	def test_lang_set_source_empty(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.sourceLangName = ""
 		self.assertEqual(glos.sourceLangName, "")
 
-	def test_lang_set_target(self):
+	def test_lang_set_target(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.targetLangName = "fa"
 		self.assertEqual(glos.targetLangName, "Persian")
 
-	def test_lang_set_target_empty(self):
+	def test_lang_set_target_empty(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.targetLangName = ""
 		self.assertEqual(glos.targetLangName, "")
 
-	def test_lang_getObj_source(self):
+	def test_lang_getObj_source(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("sourcelang", "farsi")
 		self.assertEqual(glos.sourceLang.name, "Persian")
 
-	def test_lang_getObj_target(self):
+	def test_lang_getObj_target(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("targetlang", "malay")
 		self.assertEqual(glos.targetLang.name, "Malay")
 
-	def test_lang_detect_1(self):
+	def test_lang_detect_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("name", "en-fa")
 		glos.detectLangsFromName()
@@ -468,7 +516,7 @@ class TestGlossary(TestGlossaryBase):
 			("English", "Persian"),
 		)
 
-	def test_lang_detect_2(self):
+	def test_lang_detect_2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("name", "test-en-fa")
 		glos.detectLangsFromName()
@@ -477,7 +525,7 @@ class TestGlossary(TestGlossaryBase):
 			("English", "Persian"),
 		)
 
-	def test_lang_detect_3(self):
+	def test_lang_detect_3(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("name", "eng to per")
 		glos.detectLangsFromName()
@@ -486,7 +534,7 @@ class TestGlossary(TestGlossaryBase):
 			("English", "Persian"),
 		)
 
-	def test_lang_detect_4(self):
+	def test_lang_detect_4(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("name", "Test english to farsi")
 		glos.detectLangsFromName()
@@ -495,7 +543,7 @@ class TestGlossary(TestGlossaryBase):
 			("English", "Persian"),
 		)
 
-	def test_lang_detect_5(self):
+	def test_lang_detect_5(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setInfo("name", "freedict-eng-deu.index")
 		glos.detectLangsFromName()
@@ -505,7 +553,7 @@ class TestGlossary(TestGlossaryBase):
 		)
 
 	def convert_txt_txt(
-		self,
+		self: "typing.Self",
 		fname,  # input txt file without extension
 		fname2,  # expected output txt file without extension
 		testId="tmp",
@@ -522,7 +570,7 @@ class TestGlossary(TestGlossaryBase):
 		)
 
 	def convert_to_txtZip(
-		self,
+		self: "typing.Self",
 		fname,  # input file with extension
 		fname2,  # expected output file without extensions
 		testId="tmp",
@@ -539,7 +587,7 @@ class TestGlossary(TestGlossaryBase):
 		res = glos.convert(
 			inputFilename=inputFilename,
 			outputFilename=outputFilename,
-			**convertArgs
+			**convertArgs,
 		)
 		self.assertEqual(outputFilename, res)
 		zf = zipfile.ZipFile(outputFilename)
@@ -553,7 +601,7 @@ class TestGlossary(TestGlossaryBase):
 		self.assertEqual(len(actualText), len(expectedText))
 		self.assertEqual(actualText, expectedText)
 
-	def test_txt_txtZip_1(self):
+	def test_txt_txtZip_1(self: "typing.Self"):
 		self.convert_to_txtZip(
 			"100-en-fa.txt",
 			"100-en-fa",
@@ -561,7 +609,7 @@ class TestGlossary(TestGlossaryBase):
 			infoOverride={"input_file_size": None},
 		)
 
-	def test_sort_1(self):
+	def test_sort_1(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-sort",
@@ -569,7 +617,7 @@ class TestGlossary(TestGlossaryBase):
 			sort=True,
 		)
 
-	def test_sort_2(self):
+	def test_sort_2(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-sort",
@@ -578,7 +626,7 @@ class TestGlossary(TestGlossaryBase):
 			sortKeyName="headword_lower",
 		)
 
-	def test_sort_3(self):
+	def test_sort_3(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-sort-headword",
@@ -587,7 +635,7 @@ class TestGlossary(TestGlossaryBase):
 			sortKeyName="headword",
 		)
 
-	def test_sort_4(self):
+	def test_sort_4(self: "typing.Self"):
 		self.convert_txt_txt(
 			"300-rand-en-fa",
 			"300-rand-en-fa-sort-headword",
@@ -596,7 +644,7 @@ class TestGlossary(TestGlossaryBase):
 			sortKeyName="headword",
 		)
 
-	def test_sort_5(self):
+	def test_sort_5(self: "typing.Self"):
 		self.convert_txt_txt(
 			"300-rand-en-fa",
 			"300-rand-en-fa-sort-headword-w1256",
@@ -606,7 +654,7 @@ class TestGlossary(TestGlossaryBase):
 			sortEncoding="windows-1256",
 		)
 
-	def test_sort_6(self):
+	def test_sort_6(self: "typing.Self"):
 		self.convert_txt_txt(
 			"300-rand-en-fa",
 			"300-rand-en-fa-sort-w1256",
@@ -616,7 +664,7 @@ class TestGlossary(TestGlossaryBase):
 			sortEncoding="windows-1256",
 		)
 
-	def test_sort_7(self):
+	def test_sort_7(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-sort-ebook",
@@ -625,7 +673,7 @@ class TestGlossary(TestGlossaryBase):
 			sortKeyName="ebook",
 		)
 
-	def test_sort_8(self):
+	def test_sort_8(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-sort-ebook3",
@@ -634,7 +682,7 @@ class TestGlossary(TestGlossaryBase):
 			sortKeyName="ebook_length3",
 		)
 
-	def test_lower_1(self):
+	def test_lower_1(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-lower",
@@ -642,7 +690,7 @@ class TestGlossary(TestGlossaryBase):
 			config={"lower": True},
 		)
 
-	def test_rtl_1(self):
+	def test_rtl_1(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-rtl",
@@ -650,7 +698,7 @@ class TestGlossary(TestGlossaryBase):
 			config={"rtl": True},
 		)
 
-	def test_remove_html_all_1(self):
+	def test_remove_html_all_1(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-fa",
 			"100-en-fa-remove_html_all-v2",
@@ -658,7 +706,7 @@ class TestGlossary(TestGlossaryBase):
 			config={"remove_html_all": True},
 		)
 
-	def test_remove_html_1(self):
+	def test_remove_html_1(self: "typing.Self"):
 		self.convert_txt_txt(
 			"100-en-de",
 			"100-en-de-remove_font_b",
@@ -666,7 +714,7 @@ class TestGlossary(TestGlossaryBase):
 			config={"remove_html": "font,b"},
 		)
 
-	def test_save_info_json(self):
+	def test_save_info_json(self: "typing.Self"):
 		fname = "100-en-fa"
 		testId = "save_info_json"
 		infoPath = self.newTempFilePath(f"{fname}-{testId}.info")
@@ -682,10 +730,10 @@ class TestGlossary(TestGlossaryBase):
 			self.downloadFile(f"{fname}.info"),
 		)
 
-	def test_convert_sqlite_direct_error(self):
+	def test_convert_sqlite_direct_error(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		try:
-			res = glos.convert(
+			glos.convert(
 				inputFilename="foo.txt",
 				outputFilename="bar.txt",
 				direct=True,
@@ -696,7 +744,7 @@ class TestGlossary(TestGlossaryBase):
 		else:
 			self.fail("must raise a ValueError")
 
-	def test_txt_txt_bar(self):
+	def test_txt_txt_bar(self: "typing.Self"):
 		for direct in (None, False, True):
 			self.convert_txt_txt(
 				"004-bar",
@@ -709,7 +757,7 @@ class TestGlossary(TestGlossaryBase):
 				},
 			)
 
-	def test_txt_txt_bar_sort(self):
+	def test_txt_txt_bar_sort(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			self.convert_txt_txt(
 				"004-bar",
@@ -719,7 +767,7 @@ class TestGlossary(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_txt_txt_empty_filtered(self):
+	def test_txt_txt_empty_filtered(self: "typing.Self"):
 		for direct in (None, False, True):
 			self.convert_txt_txt(
 				"006-empty",
@@ -728,7 +776,7 @@ class TestGlossary(TestGlossaryBase):
 				direct=direct,
 			)
 
-	def test_txt_txt_empty_filtered_sqlite(self):
+	def test_txt_txt_empty_filtered_sqlite(self: "typing.Self"):
 		for sqlite in (None, False, True):
 			self.convert_txt_txt(
 				"006-empty",
@@ -737,7 +785,7 @@ class TestGlossary(TestGlossaryBase):
 				sqlite=sqlite,
 			)
 
-	def test_dataEntry_save(self):
+	def test_dataEntry_save(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		tmpFname = "test_dataEntry_save"
 		entry = glos.newDataEntry(tmpFname, b"test")
@@ -747,17 +795,17 @@ class TestGlossary(TestGlossaryBase):
 			msg=f"saved file does not exist: {saveFpath}",
 		)
 
-	def test_dataEntry_getFileName(self):
+	def test_dataEntry_getFileName(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		tmpFname = "test_dataEntry_getFileName"
 		entry = glos.newDataEntry(tmpFname, b"test")
 		self.assertEqual(entry.getFileName(), tmpFname)
 
-	def test_cleanup_noFile(self):
+	def test_cleanup_noFile(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.cleanup()
 
-	def test_cleanup_cleanup(self):
+	def test_cleanup_cleanup(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		tmpFname = "test_cleanup_cleanup"
 		entry = glos.newDataEntry(tmpFname, b"test")
@@ -776,7 +824,7 @@ class TestGlossary(TestGlossaryBase):
 			msg=f"tmp file still exists: {tmpFpath}",
 		)
 
-	def test_cleanup_noCleanup(self):
+	def test_cleanup_noCleanup(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		tmpFname = "test_cleanup_noCleanup"
 		entry = glos.newDataEntry(tmpFname, b"test")
@@ -790,14 +838,14 @@ class TestGlossary(TestGlossaryBase):
 
 		self.assertTrue(isfile(tmpFpath), msg=f"tmp file does not exist: {tmpFpath}")
 
-	def test_rawEntryCompress(self):
+	def test_rawEntryCompress(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.setRawEntryCompress(True)
 		self.assertTrue(glos.rawEntryCompress)
 		glos.setRawEntryCompress(False)
 		self.assertFalse(glos.rawEntryCompress)
 
-	def addWordsList(self, glos, words, newDefiFunc=str, defiFormat=""):
+	def addWordsList(self: "typing.Self", glos, words, newDefiFunc=str, defiFormat=""):
 		wordsList = []
 		for index, line in enumerate(words):
 			words = line.rstrip().split("|")
@@ -811,7 +859,7 @@ class TestGlossary(TestGlossaryBase):
 		glos.updateIter()
 		return wordsList
 
-	def addWords(self, glos, wordsStr, **kwargs):
+	def addWords(self: "typing.Self", glos, wordsStr, **kwargs):
 		return self.addWordsList(glos, wordsStr.split("\n"), **kwargs)
 
 	tenWordsStr = """comedic
@@ -836,9 +884,12 @@ Caca|ca-ca
 darkling beetle
 Japonica"""
 
-	tenWordsStrFa = "بیمارانه\nگالوانومتر\nنقاهت\nرشکمندی\nناکاستنی\nشگفتآفرینی\nچندپاری\nنامبارکی\nآماسش\nانگیزنده"
+	tenWordsStrFa = (
+		"بیمارانه\nگالوانومتر\nنقاهت\nرشک"
+		"مندی\nناکاستنی\nشگفتآفرینی\nچندپاری\nنامبارکی\nآماسش\nانگیزنده"
+	)
 
-	def test_addEntries_1(self):
+	def test_addEntries_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		wordsList = self.addWords(
 			glos,
@@ -847,7 +898,7 @@ Japonica"""
 		)
 		self.assertEqual(wordsList, [entry.l_word for entry in glos])
 
-	def test_addEntries_2(self):
+	def test_addEntries_2(self: "typing.Self"):
 		# entry filters don't apply to loaded entries (added with addEntryObj)
 		glos = self.glos = Glossary()
 		glos.addEntryObj(glos.newEntry(["a"], "test 1"))
@@ -861,7 +912,31 @@ Japonica"""
 			[entry.l_word for entry in glos],
 		)
 
-	def test_sortWords_1(self):
+	def test_addEntries_3(self: "typing.Self"):
+		glos = self.glos = Glossary()
+		glos.addEntryObj(glos.newEntry(["a"], "test 1"))
+		glos.addEntryObj(glos.newEntry(["b"], "test 3"))
+		glos.addEntryObj(glos.newDataEntry(
+			"file.bin",
+			b"hello\x00world",
+		))
+		glos.updateEntryFilters()
+		glos.updateIter()
+		wordListList = []
+		dataEntries = []
+		for entry in glos:
+			wordListList.append(entry.l_word)
+			if entry.isData():
+				dataEntries.append(entry)
+		self.assertEqual(
+			wordListList,
+			[['a'], ['b'], ["file.bin"]],
+		)
+		self.assertEqual(len(dataEntries), 1)
+		self.assertEqual(dataEntries[0].getFileName(), "file.bin")
+		self.assertEqual(dataEntries[0].data, b"hello\x00world")
+
+	def test_sortWords_1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		wordsList = self.addWords(
 			glos,
@@ -872,7 +947,7 @@ Japonica"""
 		glos.sortWords()
 		self.assertEqual(sorted(wordsList), [entry.l_word for entry in glos])
 
-	def test_sortWords_2(self):
+	def test_sortWords_2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		wordsList = self.addWords(
 			glos,
@@ -897,7 +972,7 @@ Japonica"""
 			],
 		)
 
-	def test_sortWords_3(self):
+	def test_sortWords_3(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		wordsList = self.addWords(
 			glos,
@@ -913,7 +988,7 @@ Japonica"""
 			ls1 + ls2,
 		)
 
-	def test_sortWords_4(self):
+	def test_sortWords_4(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		wordsList = self.addWords(
 			glos,
@@ -932,7 +1007,7 @@ Japonica"""
 			ls1 + ls2,
 		)
 
-	def test_sortWords_5(self):
+	def test_sortWords_5(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		alphabetW1256 = "ءآأئابتثجحخدذرزسشصضطظعغـفقكلمنهوىي"
 		alphabetW1256_shuf = "مفزنصـذرخوآظسقلدغطيعحءأتىئاجهضثشكب"
@@ -951,7 +1026,7 @@ Japonica"""
 			list(alphabetW1256),
 		)
 
-	def test_sortWords_exc_1(self):
+	def test_sortWords_exc_1(self: "typing.Self"):
 		fname = "100-en-fa.txt"
 		glos = self.glos = Glossary()
 		glos.read(self.downloadFile(fname), direct=True)
@@ -962,45 +1037,88 @@ Japonica"""
 		else:
 			self.fail("must raise NotImplementedError")
 
-	def test_read_filename(self):
+	def test_read_filename(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos.read(self.downloadFile("004-bar.txt"))
 		self.assertEqual(glos.filename, join(dataDir, "004-bar"))
 
-	def test_wordTitleStr_em1(self):
+	def test_wordTitleStr_em1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(glos.wordTitleStr(""), "")
 
-	def test_wordTitleStr_em2(self):
+	def test_wordTitleStr_em2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		glos._defiHasWordTitle = True
 		self.assertEqual(glos.wordTitleStr("test1"), "")
 
-	def test_wordTitleStr_b1(self):
+	def test_wordTitleStr_b1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(glos.wordTitleStr("test1"), "<b>test1</b><br>")
 
-	def test_wordTitleStr_b2(self):
+	def test_wordTitleStr_b2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(
 			glos.wordTitleStr("test1", _class="headword"),
 			'<b class="headword">test1</b><br>',
 		)
 
-	def test_wordTitleStr_cjk1(self):
+	def test_wordTitleStr_cjk1(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(
 			glos.wordTitleStr("test1", sample="くりかえし"),
 			"<big>test1</big><br>",
 		)
 
-	def test_wordTitleStr_cjk2(self):
+	def test_wordTitleStr_cjk2(self: "typing.Self"):
 		glos = self.glos = Glossary()
 		self.assertEqual(
 			glos.wordTitleStr("くりかえし"),
 			"<big>くりかえし</big><br>",
 		)
 
+	def test_convert_sortLocale_default_1(self: "typing.Self"):
+		name = "092-en-fa-alphabet-sample"
+		self.convert_sqlite_both(
+			f"sort-locale/{name}.txt",
+			f"{name}-sorted-default.txt",
+			compareText=f"sort-locale/{name}-sorted-default.txt",
+			testId="sorted-default",
+			sort=True,
+			sortKeyName="headword_lower",
+		)
+
+	def test_convert_sortLocale_en_1(self: "typing.Self"):
+		name = "092-en-fa-alphabet-sample"
+		self.convert_sqlite_both(
+			f"sort-locale/{name}.txt",
+			f"{name}-sorted-en.txt",
+			compareText=f"sort-locale/{name}-sorted-en.txt",
+			testId="sorted-en",
+			sort=True,
+			sortKeyName="headword_lower:en_US.UTF-8",
+		)
+
+	def test_convert_sortLocale_fa_1(self: "typing.Self"):
+		name = "092-en-fa-alphabet-sample"
+		self.convert_sqlite_both(
+			f"sort-locale/{name}.txt",
+			f"{name}-sorted-fa.txt",
+			compareText=f"sort-locale/{name}-sorted-fa.txt",
+			testId="sorted-fa",
+			sort=True,
+			sortKeyName="headword_lower:fa_IR.UTF-8",
+		)
+
+	def test_convert_sortLocale_fa_2(self: "typing.Self"):
+		name = "092-en-fa-alphabet-sample"
+		self.convert_sqlite_both(
+			f"sort-locale/{name}.txt",
+			f"{name}-sorted-latin-fa.txt",
+			compareText=f"sort-locale/{name}-sorted-latin-fa.txt",
+			testId="sorted-latin-fa",
+			sort=True,
+			sortKeyName="headword_lower:fa-u-kr-latn-arab",
+		)
 
 if __name__ == "__main__":
 	unittest.main()

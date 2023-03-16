@@ -16,15 +16,12 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-import string
-import sys
-import os
-import re
-import struct
 import binascii
 import logging
-
-from . import core
+import re
+import struct
+import sys
+from typing import AnyStr, Callable
 
 log = logging.getLogger("pyglossary")
 
@@ -32,11 +29,15 @@ endFormat = "\x1b[0;0;0m"  # len=8
 
 
 def toBytes(s: "AnyStr") -> bytes:
-	return bytes(s, "utf-8") if isinstance(s, str) else bytes(s)
+	if isinstance(s, str):
+		return bytes(s, "utf-8")
+	return bytes(s)
 
 
 def toStr(s: "AnyStr") -> str:
-	return str(s, "utf-8") if isinstance(s, bytes) else str(s)
+	if isinstance(s, bytes):
+		return str(s, "utf-8")
+	return str(s)
 
 
 def fixUtf8(st: "AnyStr") -> str:
@@ -51,7 +52,7 @@ b_pattern_bar_us = re.compile(r"((?<!\\)(?:\\\\)*)\\\|".encode("ascii"))
 
 
 def replaceStringTable(
-	rplList: "List[Tuple[str, str]]",
+	rplList: "list[tuple[str, str]]",
 ) -> "Callable[[str], str]":
 	def replace(st: str) -> str:
 		for rpl in rplList:
@@ -70,7 +71,7 @@ def escapeNTB(st: str, bar: bool = False) -> str:
 	st = st.replace("\n", r"\n")
 	if bar:
 		st = st.replace("|", r"\|")
-	return st
+	return st  # noqa: RET504
 
 
 def unescapeNTB(st: str, bar: bool = False) -> str:
@@ -82,10 +83,10 @@ def unescapeNTB(st: str, bar: bool = False) -> str:
 	if bar:
 		st = pattern_bar_us.sub(r"\1|", st)
 	st = st.replace("\\\\", "\\")  # probably faster than re.sub
-	return st
+	return st  # noqa: RET504
 
 
-def splitByBarUnescapeNTB(st: str) -> "List[str]":
+def splitByBarUnescapeNTB(st: str) -> "list[str]":
 	"""
 		splits by "|" (and not "\\|") then unescapes Newline (\\n),
 			Tab (\\t), Baskslash (\\) and Bar (\\|) in each part
@@ -101,21 +102,18 @@ def escapeBar(st: str) -> str:
 	r"""
 		scapes vertical bar (\|)
 	"""
-	st = st.replace("\\", "\\\\")
-	st = st.replace("|", r"\|")
-	return st
+	return st.replace("\\", "\\\\").replace("|", r"\|")
 
 
 def unescapeBar(st: str) -> str:
 	r"""
 		unscapes vertical bar (\|)
 	"""
-	st = pattern_bar_us.sub(r"\1|", st)
-	st = st.replace("\\\\", "\\")  # probably faster than re.sub
-	return st
+	# str.replace is probably faster than re.sub
+	return pattern_bar_us.sub(r"\1|", st).replace("\\\\", "\\")
 
 
-def splitByBar(st: str) -> "List[str]":
+def splitByBar(st: str) -> "list[str]":
 	"""
 		splits by "|" (and not "\\|")
 		then unescapes Baskslash (\\) and Bar (\\|) in each part
@@ -126,7 +124,7 @@ def splitByBar(st: str) -> "List[str]":
 	]
 
 
-def joinByBar(parts: "List[str]") -> "str":
+def joinByBar(parts: "list[str]") -> "str":
 	return "|".join([
 		escapeBar(part)
 		for part in parts
@@ -137,14 +135,15 @@ def unescapeBarBytes(st: bytes) -> bytes:
 	r"""
 		unscapes vertical bar (\|)
 	"""
-	st = b_pattern_bar_us.sub(b"\\1|", st)
-	st = st.replace(b"\\\\", b"\\")  # probably faster than re.sub
-	return st
+	# str.replace is probably faster than re.sub
+	return b_pattern_bar_us.sub(b"\\1|", st).replace(b"\\\\", b"\\")
 
 
 # return a message string describing the current exception
 def excMessage() -> str:
 	i = sys.exc_info()
+	if not i[0]:
+		return ""
 	return f"{i[0].__name__}: {i[1]}"
 
 
@@ -152,10 +151,8 @@ def formatHMS(h: int, m: int, s: int) -> str:
 	if h == 0:
 		if m == 0:
 			return f"{s:02d}"
-		else:
-			return f"{m:02d}:{s:02d}"
-	else:
-		return f"{h:02d}:{m:02d}:{s:02d}"
+		return f"{m:02d}:{s:02d}"
+	return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 # ___________________________________________ #
@@ -165,8 +162,16 @@ def uint32ToBytes(n: int) -> bytes:
 	return struct.pack('>I', n)
 
 
+def uint64ToBytes(n: int) -> bytes:
+	return struct.pack('>Q', n)
+
+
 def uint32FromBytes(bs: bytes) -> int:
 	return struct.unpack('>I', bs)[0]
+
+
+def uint64FromBytes(bs: bytes) -> int:
+	return struct.unpack('>Q', bs)[0]
 
 
 def uintFromBytes(bs: bytes) -> int:
@@ -196,18 +201,16 @@ def urlToPath(url: str) -> str:
 
 
 def replacePostSpaceChar(st: str, ch: str) -> str:
-	st = (
+	return (
 		st.replace(f" {ch}", ch)
 		.replace(ch, f"{ch} ")
 		.replace(f"{ch}  ", f"{ch} ")
+		.removesuffix(" ")
 	)
-	if st.endswith(" "):
-		st = st[:-1]
-	return st
 
 
 def isASCII(data: str) -> bool:
-	for c in data:
+	for c in data:  # noqa: SIM111
 		if ord(c) >= 128:
 			return False
 	return True

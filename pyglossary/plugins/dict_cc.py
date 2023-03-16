@@ -1,8 +1,20 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
 import html
+import typing
 from operator import itemgetter
+from typing import TYPE_CHECKING, Callable, Iterator, cast
+
+if TYPE_CHECKING:
+	import sqlite3
+
+	from lxml.etree import _Element as Element
+
+	from pyglossary.lxml_types import T_htmlfile
+
+
+from pyglossary.core import log
+from pyglossary.glossary_types import EntryType, GlossaryType
 
 enable = True
 lname = "dict_cc"
@@ -19,36 +31,38 @@ website = (
 
 
 class Reader(object):
-	def __init__(self, glos):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self):
+	def _clear(self: "typing.Self") -> None:
 		self._filename = ''
-		self._con = None
-		self._cur = None
+		self._con: "sqlite3.Connection | None" = None
+		self._cur: "sqlite3.Cursor | None" = None
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		from sqlite3 import connect
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		self._glos.setDefaultDefiFormat("h")
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute(
-			"select count(distinct term1)+count(distinct term2) from main_ft"
+			"select count(distinct term1)+count(distinct term2) from main_ft",
 		)
 		return self._cur.fetchone()[0]
 
 	def makeList(
-		self,
-		hf: "lxml.etree.htmlfile",
-		input_elements: "List[lxml.etree.Element]",
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		input_elements: "list[Element]",
 		processor: "Callable",
-		single_prefix=None,
-		skip_single=True
-	):
+		single_prefix: str = "",
+		skip_single: bool = True,
+	) -> None:
 		""" Wrap elements into <ol> if more than one element """
 		if len(input_elements) == 0:
 			return
@@ -63,11 +77,33 @@ class Reader(object):
 				with hf.element("li"):
 					processor(hf, el)
 
+	def makeGroupsList(
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		groups: "list[tuple[str, str]]",
+		processor: "Callable[[T_htmlfile, tuple[str, str]], None]",
+		single_prefix: str = "",
+		skip_single: bool = True,
+	) -> None:
+		""" Wrap elements into <ol> if more than one element """
+		if len(groups) == 0:
+			return
+
+		if len(groups) == 1:
+			hf.write(single_prefix)
+			processor(hf, groups[0])
+			return
+
+		with hf.element("ol"):
+			for el in groups:
+				with hf.element("li"):
+					processor(hf, el)
+
 	def writeSense(
-		self,
-		hf: "lxml.etree.htmlfile",
-		row: "Tuple[str, str, str]",
-	):
+		self: "typing.Self",
+		hf: "T_htmlfile",
+		row: "tuple[str, str]",
+	) -> None:
 		from lxml import etree as ET
 		trans, entry_type = row
 		if entry_type:
@@ -82,12 +118,18 @@ class Reader(object):
 		else:
 			with hf.element("big"):
 				with hf.element("a", href=f'bword://{trans}'):
-					hf.write(f"⏎")
+					hf.write("⏎")
 
-	def iterRows(self, column1, column2):
+	def iterRows(
+		self: "typing.Self",
+		column1: str,
+		column2: str,
+	) -> "Iterator[tuple[str, str, str]]":
+		if self._cur is None:
+			raise ValueError("cur is None")
 		self._cur.execute(
 			f"select {column1}, {column2}, entry_type from main_ft"
-			f" order by {column1}"
+			f" order by {column1}",
 		)
 		for row in self._cur.fetchall():
 			term1 = row[0]
@@ -102,7 +144,7 @@ class Reader(object):
 				log.error(f"html.unescape({term2!r}) -> {e}")
 			yield term1, term2, row[2]
 
-	def parseGender(self, headword):
+	def parseGender(self: "typing.Self", headword: str) -> "tuple[str | None, str]":
 		# {m}	masc	masculine	German: maskulin
 		# {f}	fem 	feminine	German: feminin
 		# {n}	neut	neutral		German: neutral
@@ -128,10 +170,15 @@ class Reader(object):
 		headword = headword[:i] + headword[i + 4:]
 		return gender, headword
 
-	def _iterOneDirection(self, column1, column2):
-		from itertools import groupby
-		from lxml import etree as ET
+	def _iterOneDirection(
+		self: "typing.Self",
+		column1: str,
+		column2: str,
+	) -> "Iterator[EntryType]":
 		from io import BytesIO
+		from itertools import groupby
+
+		from lxml import etree as ET
 
 		glos = self._glos
 		for headword, groupsOrig in groupby(
@@ -139,7 +186,7 @@ class Reader(object):
 			key=itemgetter(0),
 		):
 			headword = html.unescape(headword)
-			groups = [
+			groups: "list[tuple[str, str]]" = [
 				(term2, entry_type)
 				for _, term2, entry_type in groupsOrig
 			]
@@ -151,19 +198,19 @@ class Reader(object):
 						with hf.element("i"):
 							hf.write(gender)
 						hf.write(ET.Element("br"))
-					self.makeList(
-						hf,
+					self.makeGroupsList(
+						cast("T_htmlfile", hf),
 						groups,
 						self.writeSense,
 					)
 			defi = f.getvalue().decode("utf-8")
-			yield self._glos.newEntry(headword, defi, defiFormat="h")
+			yield glos.newEntry(headword, defi, defiFormat="h")
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		yield from self._iterOneDirection("term1", "term2")
 		yield from self._iterOneDirection("term2", "term1")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

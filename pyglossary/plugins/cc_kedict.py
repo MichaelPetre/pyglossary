@@ -1,8 +1,19 @@
+
+import typing
+
 # -*- coding: utf-8 -*-
-from pyglossary.plugins.formats_common import *
-from pyglossary.text_reader import TextGlossaryReader
 from io import BytesIO
-from os.path import dirname
+from os.path import isdir, join
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator
+
+if TYPE_CHECKING:
+	import lxml
+
+	from pyglossary.glossary_types import EntryType, GlossaryType
+	from pyglossary.option import Option
+
+from pyglossary.core import log, pip
+from pyglossary.text_reader import TextGlossaryReader
 
 enable = True
 lname = "cc_kedict"
@@ -17,8 +28,7 @@ website = (
 	"https://github.com/mhagiwara/cc-kedict",
 	"@mhagiwara/cc-kedict",
 )
-optionsProp = {
-}
+optionsProp: "dict[str, Option]" = {}
 
 
 class YamlReader(TextGlossaryReader):
@@ -32,13 +42,13 @@ class YamlReader(TextGlossaryReader):
 	)
 
 	def __init__(
-		self,
-		glos: GlossaryType,
+		self: "typing.Self",
+		glos: "GlossaryType",
 		spellKey: str = "",
 		posKey: str = "",
 		synsKey: str = "",
 		tagsKey: str = "",
-	):
+	) -> None:
 		TextGlossaryReader.__init__(self, glos)
 		self._spellKey = spellKey
 		self._posKey = posKey
@@ -61,30 +71,29 @@ class YamlReader(TextGlossaryReader):
 			"pref": "prefix",
 		}
 
-	def isInfoWord(self, word):
+	def isInfoWord(self: "typing.Self", word: str) -> bool:
 		return False
 
-	def fixInfoWord(self, word):
+	def fixInfoWord(self: "typing.Self", word: str) -> str:
 		return ""
 
 	def _makeList(
-		self,
+		self: "typing.Self",
 		hf: "lxml.etree.htmlfile",
-		input_objects: "List[Any]",
+		input_objects: "list[Any]",
 		processor: "Callable",
-		single_prefix=None,
-		skip_single=True
-	):
+		single_prefix: "str | None" = None,
+		skip_single: bool = True,
+	) -> None:
 		""" Wrap elements into <ol> if more than one element """
-		from lxml import etree as ET
-
 		if not input_objects:
 			return
 
 		if skip_single and len(input_objects) == 1:
 			# if single_prefix is None:
 			# 	single_prefix = ET.Element("br")
-			hf.write(single_prefix)
+			if single_prefix:
+				hf.write(single_prefix)
 			processor(hf, input_objects[0], 1)
 			return
 
@@ -94,11 +103,11 @@ class YamlReader(TextGlossaryReader):
 					processor(hf, el, len(input_objects))
 
 	def _processExample(
-		self,
+		self: "typing.Self",
 		hf: "lxml.etree.htmlfile",
 		exampleDict: "Dict",
 		count: int,
-	):
+	) -> None:
 		from lxml import etree as ET
 
 		if not exampleDict.get("example"):
@@ -120,11 +129,11 @@ class YamlReader(TextGlossaryReader):
 				hf.write(f"{translation}")
 
 	def _processDef(
-		self,
+		self: "typing.Self",
 		hf: "lxml.etree.htmlfile",
 		defDict: "Dict",
 		count: int,
-	):
+	) -> None:
 		from lxml import etree as ET
 
 		text = defDict.get("def", "")
@@ -147,18 +156,18 @@ class YamlReader(TextGlossaryReader):
 			)
 
 	def _processNote(
-		self,
+		self: "typing.Self",
 		hf: "lxml.etree.htmlfile",
 		note: str,
 		count: int,
-	):
+	) -> None:
 		hf.write(note)
 
 	def _processEntry(
-		self,
+		self: "typing.Self",
 		hf: "lxml.etree.htmlfile",
 		edict: "Dict",
-	):
+	) -> None:
 		from lxml import etree as ET
 
 		if self._spellKey and self._spellKey in edict:
@@ -220,7 +229,10 @@ class YamlReader(TextGlossaryReader):
 				skip_single=False,
 			)
 
-	def _createEntry(self, yamlBlock: str) -> "Optional[Tuple[str, str, None]]":
+	def _createEntry(
+		self: "typing.Self",
+		yamlBlock: str,
+	) -> "tuple[str, str, None] | None":
 		from lxml import etree as ET
 		from yaml import load
 		try:
@@ -232,7 +244,7 @@ class YamlReader(TextGlossaryReader):
 		word = edict.get("word")
 		if not word:
 			log.error(f"no word in {edict}")
-			return
+			return None
 
 		f = BytesIO()
 
@@ -243,7 +255,7 @@ class YamlReader(TextGlossaryReader):
 		defi = f.getvalue().decode("utf-8")
 		return word, defi, None
 
-	def nextBlock(self):
+	def nextBlock(self: "typing.Self") -> "EntryType":
 		if not self._file:
 			raise StopIteration
 		lines = []
@@ -274,7 +286,7 @@ class Reader(object):
 		"lxml": "lxml",
 	}
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._yaml = YamlReader(
 			glos,
@@ -284,10 +296,16 @@ class Reader(object):
 			tagsKey="tags",
 		)
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		return 0
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
+		try:
+			from lxml import etree as ET  # noqa: F401
+		except ModuleNotFoundError as e:
+			e.msg += f", run `{pip} install lxml` to install"
+			raise e
+
 		if isdir(filename):
 			filename = join(filename, "kedict.yml")
 		self._filename = filename
@@ -298,9 +316,9 @@ class Reader(object):
 		self._glos.setDefaultDefiFormat("h")
 		self._yaml.open(filename)
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		self._yaml.close()
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		for entry in self._yaml:
 			yield entry

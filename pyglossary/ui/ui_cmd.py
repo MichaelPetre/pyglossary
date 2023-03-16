@@ -18,16 +18,21 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
+import logging
+import os
+import sys
+import typing
 from os.path import join
-import time
+from typing import Any, Dict, Mapping
 
-from pyglossary.glossary import *
-from .base import *
-from . import progressbar as pb
+from pyglossary.core import dataDir, log
+from pyglossary.glossary_v2 import ConvertArgs, Glossary
+
+from .base import UIBase, fread
 from .wcwidth import wcswidth
 
 
-def wc_ljust(text, length, padding=' '):
+def wc_ljust(text: str, length: int, padding: str = ' ') -> str:
 	return text + padding * max(0, (length - wcswidth(text)))
 
 
@@ -45,13 +50,13 @@ else:
 COMMAND = "pyglossary"
 
 
-def getColWidth(subject, strings):
+def getColWidth(subject: str, strings: "list[str]") -> int:
 	return max(
 		len(x) for x in [subject] + strings
 	)
 
 
-def getFormatsTable(names, header):
+def getFormatsTable(names: "list[str]", header: str) -> str:
 	descriptions = [
 		Glossary.plugins[name].description
 		for name in names
@@ -72,29 +77,29 @@ def getFormatsTable(names, header):
 		" | ".join([
 			"Name".center(nameWidth),
 			"Description".center(descriptionWidth),
-			"Extensions".center(extensionsWidth)
-		])
+			"Extensions".center(extensionsWidth),
+		]),
 	)
 	lines.append(
 		"-+-".join([
 			"-" * nameWidth,
 			"-" * descriptionWidth,
 			"-" * extensionsWidth,
-		])
+		]),
 	)
 	for index, name in enumerate(names):
 		lines.append(
 			" | ".join([
 				name.ljust(nameWidth),
 				descriptions[index].ljust(descriptionWidth),
-				extensions[index].ljust(extensionsWidth)
-			])
+				extensions[index].ljust(extensionsWidth),
+			]),
 		)
 
 	return "\n".join(lines)
 
 
-def help():
+def help() -> None:
 	import string
 	text = fread(join(dataDir, "help"))
 	text = text.replace("<b>", startBold)\
@@ -109,7 +114,7 @@ def help():
 	print(text)
 
 
-def parseFormatOptionsStr(st) -> "Optional[Dict]":
+def parseFormatOptionsStr(st: str) -> "dict[str, Any] | None":
 	"""
 		prints error and returns None if failed to parse one option
 	"""
@@ -146,28 +151,39 @@ def encodeFormatOptions(opt: "Dict") -> str:
 
 
 class NullObj(object):
-	def __getattr__(self, attr):
+	def __getattr__(self: "typing.Self", attr: str) -> "NullObj":
 		return self
 
-	def __setattr__(self, attr, value):
+	def __setattr__(self: "typing.Self", attr: str, value: "Any") -> None:
 		pass
 
-	def __setitem__(self, key, value):
+	def __setitem__(self: "typing.Self", key: str, value: "Any") -> None:
 		pass
 
-	def __call__(self, *args, **kwargs):
+	def __call__(
+		self: "typing.Self",
+		*args: "tuple[Any]",
+		**kwargs: "Mapping[Any]",
+	) -> None:
 		pass
 
 
 class UI(UIBase):
-	def __init__(self):
+	def __init__(
+		self: "typing.Self",
+		progressbar: bool = True,
+	) -> None:
 		UIBase.__init__(self)
 		# log.debug(self.config)
 		self.pbar = NullObj()
 		self._toPause = False
 		self._resetLogFormatter = None
+		self._progressbar = progressbar
 
-	def onSigInt(self, *args):
+	def onSigInt(
+		self: "typing.Self",
+		*args: "tuple[Any]",
+	) -> None:
 		log.info("")
 		if self._toPause:
 			log.info("Operation Canceled")
@@ -176,52 +192,46 @@ class UI(UIBase):
 			self._toPause = True
 			log.info("Please wait...")
 
-	def setText(self, text):
+	def setText(self: "typing.Self", text: str) -> None:
 		self.pbar.widgets[0] = text
 
-	def fixLogger(self):
+	def fixLogger(self: "typing.Self") -> None:
 		for h in log.handlers:
 			if h.name == "std":
 				self.fixLogHandler(h)
 				return
 
-	def fillMessage(self, msg):
-		return wc_ljust(msg, self.pbar.term_width)
+	def fillMessage(self: "typing.Self", msg: str) -> str:
+		return "\r" + wc_ljust(msg, self.pbar.term_width)
 
-	def fixLogHandler(self, h):
-		def reset():
+	def fixLogHandler(self: "typing.Self", h: "logging.Handler") -> None:
+		def reset() -> None:
 			h.formatter.fill = None
 
 		self._resetLogFormatter = reset
 		h.formatter.fill = self.fillMessage
 
-	def progressInit(self, title):
-		rot = pb.RotatingMarker()
-		self.pbar = pb.ProgressBar(
-			maxval=1.0,
-			# update_step=0.5, removed
-		)
-		self.pbar.widgets = [
-			title + " ",
-			pb.AnimatedMarker(),
-			" ",
-			pb.Bar(marker="█"),
-			pb.Percentage(), " ",
-			pb.ETA(),
-		]
-		self.pbar.start(num_intervals=1000)
-		rot.pbar = self.pbar
+	def progressInit(self: "typing.Self", title: str) -> None:
+		try:
+			from .pbar_tqdm import createProgressBar
+		except ModuleNotFoundError:
+			from .pbar_legacy import createProgressBar
+		self.pbar = createProgressBar(title)
 		self.fixLogger()
 
-	def progress(self, rat, text=""):
-		self.pbar.update(rat)
+	def progress(self: "typing.Self", ratio: float, text: str = "") -> None:
+		self.pbar.update(ratio)
 
-	def progressEnd(self):
+	def progressEnd(self: "typing.Self") -> None:
 		self.pbar.finish()
 		if self._resetLogFormatter:
 			self._resetLogFormatter()
 
-	def reverseLoop(self, *args, **kwargs):
+	def reverseLoop(
+		self: "typing.Self",
+		*args: "tuple[Any]",
+		**kwargs: "Mapping[Any]",
+	) -> None:
 		from pyglossary.reverse import reverseGlossary
 		reverseKwArgs = {}
 		for key in (
@@ -233,7 +243,7 @@ class UI(UIBase):
 			"saveStep",
 			"maxNum",
 			"minRel",
-			"minWordLen"
+			"minWordLen",
 		):
 			try:
 				reverseKwArgs[key] = self.config["reverse_" + key]
@@ -243,28 +253,28 @@ class UI(UIBase):
 
 		if not self._toPause:
 			log.info("Reversing glossary... (Press Ctrl+C to pause/stop)")
-		for wordI in reverseGlossary(self.glos, **reverseKwArgs):
+		for _ in reverseGlossary(self.glos, **reverseKwArgs):
 			if self._toPause:
 				log.info(
 					"Reverse is paused."
-					" Press Enter to continue, and Ctrl+C to exit"
+					" Press Enter to continue, and Ctrl+C to exit",
 				)
 				input()
 				self._toPause = False
 
 	def run(
-		self,
+		self: "typing.Self",
 		inputFilename: str = "",
 		outputFilename: str = "",
 		inputFormat: str = "",
 		outputFormat: str = "",
 		reverse: bool = False,
-		config: "Optional[Dict]" = None,
-		readOptions: "Optional[Dict]" = None,
-		writeOptions: "Optional[Dict]" = None,
-		convertOptions: "Optional[Dict]" = None,
-		glossarySetAttrs: "Optional[Dict]" = None,
-	):
+		config: "Dict | None" = None,
+		readOptions: "Dict | None" = None,
+		writeOptions: "Dict | None" = None,
+		convertOptions: "Dict | None" = None,
+		glossarySetAttrs: "Dict | None" = None,
+	) -> bool:
 		if config is None:
 			config = {}
 		if readOptions is None:
@@ -278,16 +288,16 @@ class UI(UIBase):
 
 		self.config = config
 
-		if inputFormat:
+		if inputFormat:  # noqa: SIM102
 			# inputFormat = inputFormat.capitalize()
 			if inputFormat not in Glossary.readFormats:
 				log.error(f"invalid read format {inputFormat}")
-		if outputFormat:
+		if outputFormat:  # noqa: SIM102
 			# outputFormat = outputFormat.capitalize()
 			if outputFormat not in Glossary.writeFormats:
 				log.error(f"invalid write format {outputFormat}")
 				log.error(f"try: {COMMAND} --help")
-				return 1
+				return False
 		if not outputFilename:
 			if reverse:
 				pass
@@ -297,16 +307,17 @@ class UI(UIBase):
 				except (KeyError, IndexError):
 					log.error(f"invalid write format {outputFormat}")
 					log.error(f"try: {COMMAND} --help")
-					return 1
+					return False
 				else:
 					outputFilename = os.path.splitext(inputFilename)[0] + ext
 			else:
 				log.error("neither output file nor output format is given")
 				log.error(f"try: {COMMAND} --help")
-				return 1
+				return False
 
 		glos = self.glos = Glossary(ui=self)
-		self.glos.config = self.config
+		glos.config = self.config
+		glos.progressbar = self._progressbar
 
 		for attr, value in glossarySetAttrs.items():
 			setattr(glos, attr, value)
@@ -318,7 +329,7 @@ class UI(UIBase):
 			if not glos.read(
 				inputFilename,
 				format=inputFormat,
-				**readOptions
+				**readOptions,
 			):
 				log.error("reading input file was failed!")
 				return False
@@ -326,15 +337,15 @@ class UI(UIBase):
 			self.pbar.update_step = 0.1
 			self.reverseLoop(savePath=outputFilename)
 		else:
-			finalOutputFile = self.glos.convert(
+			finalOutputFile = self.glos.convert(ConvertArgs(
 				inputFilename,
 				inputFormat=inputFormat,
 				outputFilename=outputFilename,
 				outputFormat=outputFormat,
 				readOptions=readOptions,
 				writeOptions=writeOptions,
-				**convertOptions
-			)
+				**convertOptions,
+			))
 			return bool(finalOutputFile)
 
 		return True

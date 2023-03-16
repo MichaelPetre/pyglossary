@@ -1,6 +1,10 @@
+import logging
 import os
 import shutil
-import logging
+import types
+import typing
+from typing import Any, Callable
+
 from pyglossary import core
 
 log = logging.getLogger("pyglossary")
@@ -17,13 +21,18 @@ class indir(object):
 		>>> print(os.getcwd())  # -> "~/projects"
 		>>> # automatically return to previous directory.
 	"""
-	def __init__(self, directory: str, create: bool = False, clear: bool = False):
-		self.oldpwd = None
+	def __init__(
+		self: "typing.Self",
+		directory: str,
+		create: bool = False,
+		clear: bool = False,
+	) -> None:
+		self.oldpwd: "str | None" = None
 		self.dir = directory
 		self.create = create
 		self.clear = clear
 
-	def __enter__(self):
+	def __enter__(self: "typing.Self") -> None:
 		self.oldpwd = os.getcwd()
 		if os.path.exists(self.dir):
 			if self.clear:
@@ -33,8 +42,14 @@ class indir(object):
 			os.makedirs(self.dir)
 		os.chdir(self.dir)
 
-	def __exit__(self, exc_type, exc_val, exc_tb):
-		os.chdir(self.oldpwd)
+	def __exit__(
+		self: "typing.Self",
+		exc_type: "type",
+		exc_val: "Exception",
+		exc_tb: "types.TracebackType",
+	) -> None:
+		if self.oldpwd:
+			os.chdir(self.oldpwd)
 		self.oldpwd = None
 
 
@@ -44,30 +59,36 @@ def runDictzip(filename: str) -> None:
 	dictzipCmd = shutil.which("dictzip")
 	if not dictzipCmd:
 		log.warning("dictzip command was not found. Make sure it's in your $PATH")
-		return False
-	(out, err) = subprocess.Popen(
+		return
+	b_out, b_err = subprocess.Popen(
 		[dictzipCmd, filename],
-		stdout=subprocess.PIPE
+		stdout=subprocess.PIPE,
 	).communicate()
 	log.debug(f"dictzip command: {dictzipCmd!r}")
-	if err:
-		err = err.replace('\n', ' ')
+	if b_err:
+		err = b_err.decode("utf-8").replace('\n', ' ')
 		log.error(f"dictzip error: {err}")
-	if out:
-		out = out.replace('\n', ' ')
+	if b_out:
+		out = b_out.decode("utf-8").replace('\n', ' ')
 		log.error(f"dictzip error: {out}")
 
 
-def _rmtreeError(func, direc, exc_info):
-	exc_type, exc_val, exc_tb = exc_info
+def _rmtreeError(
+	func: "Callable",
+	direc: str,
+	exc_info: "tuple[type, Exception, types.TracebackType] | None",
+) -> None:
+	if exc_info is None:
+		return
+	_, exc_val, _ = exc_info
 	log.error(exc_val)
 
 
-def rmtree(direc):
+def rmtree(direc: str) -> None:
 	import shutil
 	from os.path import isdir
 	try:
-		for i in range(2):
+		for _ in range(2):
 			if isdir(direc):
 				shutil.rmtree(
 					direc,
@@ -77,7 +98,7 @@ def rmtree(direc):
 		log.exception(f"error removing directory: {direc}")
 
 
-def showMemoryUsage():
+def showMemoryUsage() -> None:
 	if log.level > core.TRACE:
 		return
 	try:
@@ -85,7 +106,7 @@ def showMemoryUsage():
 	except ModuleNotFoundError:
 		return
 	usage = psutil.Process(os.getpid()).memory_info().rss // 1024
-	log.trace(f"Memory Usage: {usage} kB")
+	log.trace(f"Memory Usage: {usage:,} kB")
 
 
 def my_url_show(link: str) -> None:

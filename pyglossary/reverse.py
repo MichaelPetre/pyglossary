@@ -1,21 +1,22 @@
-from .glossary_type import GlossaryType
-from .entry import Entry, BaseEntry
-
+import logging
 import re
 from operator import itemgetter
+from typing import TYPE_CHECKING, Iterable, Iterator
 
-import logging
+if TYPE_CHECKING:
+	from .glossary_types import EntryType, GlossaryExtendedType
+
 log = logging.getLogger("pyglossary")
 
 
 def reverseGlossary(
-	glos: GlossaryType,
+	glos: GlossaryExtendedType,
 	savePath: str = "",
-	words: "Optional[List[str]]" = None,
+	words: "list[str] | None" = None,
 	includeDefs: bool = False,
 	reportStep: int = 300,
 	saveStep: int = 1000,  # set this to zero to disable auto saving
-	**kwargs
+	**kwargs,
 ) -> "Iterator[int]":
 	"""
 	This is a generator
@@ -46,9 +47,7 @@ def reverseGlossary(
 	if saveStep < 2:
 		raise ValueError("saveStep must be more than 1")
 
-	ui = glos.ui
-
-	entries = []
+	entries: "list[EntryType]" = []
 	for entry in glos:
 		entries.append(entry)
 	log.info(f"loaded {len(entries)} entries into memory")
@@ -61,7 +60,7 @@ def reverseGlossary(
 	wordCount = len(words)
 	log.info(
 		f"Reversing to file {savePath!r}"
-		f", number of words: {wordCount}"
+		f", number of words: {wordCount}",
 	)
 	glos.progressInit("Reversing")
 	wcThreshold = wordCount // 200 + 1
@@ -78,7 +77,7 @@ def reverseGlossary(
 				entries,
 				word,
 				includeDefs=includeDefs,
-				**kwargs
+				**kwargs,
 			)
 			if result:
 				try:
@@ -98,24 +97,24 @@ def reverseGlossary(
 
 
 def takeOutputWords(
-	glos: GlossaryType,
-	entryIter: "Iterator[BaseEntry]",
+	glos: GlossaryExtendedType,
+	entryIter: "Iterable[EntryType]",
 	minWordLen: int = 3,
-) -> "List[str]":
+) -> "list[str]":
 	# fr"[\w]{{{minWordLen},}}"
 	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.U)
 	words = set()
-	progressbar, glos._progressbar = glos._progressbar, False
+	progressbar, glos.progressbar = glos.progressbar, False
 	for entry in entryIter:
 		words.update(wordPattern.findall(
 			entry.defi,
 		))
-	glos._progressbar = progressbar
+	glos.progressbar = progressbar
 	return sorted(words)
 
 
 def searchWordInDef(
-	entryIter: "Iterator[BaseEntry]",
+	entryIter: "Iterable[EntryType]",
 	st: str,
 	matchWord: bool = True,
 	sepChars: str = ".,،",
@@ -124,21 +123,21 @@ def searchWordInDef(
 	minWordLen: int = 3,
 	includeDefs: bool = False,
 	showRel: str = "Percent",  # "Percent" | "Percent At First" | ""
-) -> "List[str]":
+) -> "list[str]":
 	# searches word "st" in definitions of the glossary
 	splitPattern = re.compile(
 		"|".join([re.escape(x) for x in sepChars]),
 		re.U,
 	)
 	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.U)
-	outRel = []
+	outRel: "list[tuple[str, float] | tuple[str, float, str]]" = []
 	for entry in entryIter:
 		words = entry.l_word
 		defi = entry.defi
 		if st not in defi:
 			continue
 		for word in words:
-			rel = 0  # relation value of word (0 <= rel <= 1)
+			rel = 0.0  # relation value of word (0 <= rel <= 1)
 			for part in splitPattern.split(defi):
 				if not part:
 					continue
@@ -150,12 +149,12 @@ def searchWordInDef(
 						continue
 					rel = max(
 						rel,
-						partWords.count(st) / len(partWords)
+						partWords.count(st) / len(partWords),
 					)
 				else:
 					rel = max(
 						rel,
-						part.count(st) * len(st) / len(part)
+						part.count(st) * len(st) / len(part),
 					)
 			if rel <= minRel:
 				continue
@@ -176,7 +175,7 @@ def searchWordInDef(
 	if includeDefs:
 		for j in range(n):
 			numP = num
-			w, num, m = outRel[j]
+			w, num, m = outRel[j]  # type: ignore
 			m = m.replace("\n", "\\n").replace("\t", "\\t")
 			onePer = int(1.0 / num)
 			if onePer == 1.0:
@@ -193,7 +192,7 @@ def searchWordInDef(
 		return out
 	for j in range(n):
 		numP = num
-		w, num = outRel[j]
+		w, num = outRel[j]  # type: ignore
 		onePer = int(1.0 / num)
 		if onePer == 1.0:
 			out.append(w)

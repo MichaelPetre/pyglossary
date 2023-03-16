@@ -1,6 +1,11 @@
+
+import typing
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+from typing import Generator, Iterator
+
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import Option
 
 enable = False
 lname = "testformat"
@@ -13,16 +18,16 @@ wiki = ""
 website = None
 
 # key is option/argument name, value is instance of Option
-optionsProp = {}
+optionsProp: "dict[str, Option]" = {}
 
 
 class Reader(object):
-	def __init__(self, glos: "GlossaryType") -> None:
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._filename = ""
 		self._wordCount = 0
 
-	def __len__(self) -> int:
+	def __len__(self: "typing.Self") -> int:
 		# return the number of entries if you have it
 		# if you don't, return 0 and progressbar will be disabled
 		# self._wordCount can be set in self.open function
@@ -30,7 +35,7 @@ class Reader(object):
 		# iteration begins and __iter__ method is called
 		return self._wordCount
 
-	def open(self, filename) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		# open the file, read headers / info and set info to self._glos
 		# and set self._wordCount if you can
 		# read-options should be keyword arguments in this method
@@ -43,13 +48,13 @@ class Reader(object):
 		self._glos.setInfo("author", "Me")
 		self._glos.setInfo("copyright", "GPL")
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		# this is called after reading/conversion is finished
 		# if you have an open file object, close it here
 		# if you need to clean up temp files, do it here
 		pass
 
-	def __iter__(self) -> "Iterator[BaseEntry]":
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		# the easiest and simplest way to implement an Iterator is
 		# by writing a generator, by calling: yield glos.newEntry(word, defi)
 		# inside a loop (typically iterating over a file object for text file)
@@ -66,16 +71,16 @@ class Reader(object):
 
 
 class Writer(object):
-	def __init__(self, glos: "GlossaryType") -> None:
+	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
 		self._glos = glos
-		self._filename = None
+		self._filename = ""
 
-	def open(self, filename: str) -> None:
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		glos = self._glos
-		filename = self._filename
+		filename = self._filename  # noqa
 		# log.info(f"some useful message")
 		while True:
 			entry = yield
@@ -84,17 +89,17 @@ class Writer(object):
 			if entry.isData():
 				# can save it with entry.save(directory)
 				continue
-			word = entry.s_word
-			defi = entry.defi
+			word = entry.s_word  # noqa
+			defi = entry.defi  # noqa
 			# here write word and defi to the output file (depending on
 			# your format)
 		# here read info from Glossaey object
-		name = glos.getInfo("name")
-		desc = glos.getInfo("description")
-		author = glos.author
-		copyright = glos.getInfo("copyright")
+		name = glos.getInfo("name")  # noqa
+		desc = glos.getInfo("description")  # noqa
+		author = glos.author  # noqa
+		copyright = glos.getInfo("copyright")  # noqa
 		# if an info key doesn't exist, getInfo returns empty string
 		# now write info to the output file (depending on your output format)
 
-	def finish(self):
-		self._filename = None
+	def finish(self: "typing.Self") -> None:
+		self._filename = ""

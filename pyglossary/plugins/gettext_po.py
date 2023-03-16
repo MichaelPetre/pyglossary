@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 
-from pyglossary.plugins.formats_common import *
+import io
+import os
+import typing
+from os.path import isdir
+from typing import Generator, Iterator
+
+from pyglossary.core import log, pip
+from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.option import (
+	BoolOption,
+	Option,
+)
 
 enable = True
 lname = "gettext_po"
@@ -15,7 +26,7 @@ website = (
 	"https://www.gnu.org/software/gettext",
 	"gettext - GNU Project",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"resources": BoolOption(comment="Enable resources / data files"),
 }
 
@@ -25,18 +36,18 @@ class Reader(object):
 		"polib": "polib",
 	}
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
 		self.clear()
 
-	def clear(self):
+	def clear(self: "typing.Self") -> None:
 		self._filename = ""
-		self._file = None
-		self._wordCount = None
+		self._file: "io.TextIOBase | None" = None
+		self._wordCount: "int | None" = None
 		self._resDir = ""
-		self._resFileNames = []
+		self._resFileNames: "list[str]" = []
 
-	def open(self, filename):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		self._file = open(filename)
 		self._resDir = filename + "_res"
@@ -46,32 +57,37 @@ class Reader(object):
 			self._resDir = ""
 			self._resFileNames = []
 
-	def close(self):
+	def close(self: "typing.Self") -> None:
 		if self._file:
 			self._file.close()
 		self.clear()
 
-	def __len__(self):
+	def __len__(self: "typing.Self") -> int:
 		from pyglossary.file_utils import fileCountLines
 		if self._wordCount is None:
 			log.debug("Try not to use len(reader) as it takes extra time")
 			self._wordCount = fileCountLines(
 				self._filename,
-				newline="\nmsgid",
+				newline=b"\nmsgid",
 			)
 		return self._wordCount
 
-	def __iter__(self):
+	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
 		try:
 			from polib import unescape as po_unescape
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install polib` to install"
 			raise e
+		
+		_file = self._file
+		if _file is None:
+			raise ValueError("_file is None")
+		
 		word = ""
 		defi = ""
 		msgstr = False
 		wordCount = 0
-		for line in self._file:
+		for line in _file:
 			line = line.strip()
 			if not line:
 				continue
@@ -112,32 +128,37 @@ class Writer(object):
 
 	_resources: bool = True
 
-	def __init__(self, glos: GlossaryType):
+	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
-		self._file = None
+		self._filename = ""
+		self._file: "io.TextIOBase | None" = None
 
-	def open(self, filename: str):
+	def open(self: "typing.Self", filename: str) -> None:
 		self._filename = filename
 		self._file = _file = open(filename, mode="wt", encoding="utf-8")
 		_file.write('#\nmsgid ""\nmsgstr ""\n')
 		for key, value in self._glos.iterInfo():
 			_file.write(f'"{key}: {value}\\n"\n')
 
-	def finish(self):
-		self._filename = None
+	def finish(self: "typing.Self") -> None:
+		self._filename = ""
 		if self._file:
 			self._file.close()
 			self._file = None
 
-	def write(self) -> "Generator[None, BaseEntry, None]":
+	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
 		try:
 			from polib import escape as po_escape
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install polib` to install"
 			raise e
-		resources = self._resources
+
 		_file = self._file
+		if _file is None:
+			raise ValueError("_file is None")
+
+		resources = self._resources
+		filename = self._filename
 		while True:
 			entry = yield
 			if entry is None:
@@ -148,5 +169,5 @@ class Writer(object):
 				continue
 			_file.write(
 				f"msgid {po_escape(entry.s_word)}\n"
-				f"msgstr {po_escape(entry.defi)}\n\n"
+				f"msgstr {po_escape(entry.defi)}\n\n",
 			)

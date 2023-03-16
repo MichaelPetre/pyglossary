@@ -1,4 +1,8 @@
-from pyglossary.plugins.formats_common import *
+
+import typing
+
+from pyglossary.core import log
+from pyglossary.option import EncodingOption, Option, StrOption
 from pyglossary.text_reader import TextGlossaryReader
 
 enable = True
@@ -14,11 +18,11 @@ website = (
 	"https://github.com/cheusov/dictd/blob/master/dictunformat.1.in",
 	"dictd/dictunformat.1.in - @cheusov/dictd",
 )
-optionsProp = {
+optionsProp: "dict[str, Option]" = {
 	"encoding": EncodingOption(),
 	"headword_separator": StrOption(
 		comment="separator for headword and alternates",
-	)
+	),
 }
 
 
@@ -30,13 +34,13 @@ class Reader(TextGlossaryReader):
 	_headword_separator = ";   "
 	# https://github.com/cheusov/dictd/blob/master/dictfmt/dictunformat.in#L14
 
-	def isInfoWord(self, word):
+	def isInfoWord(self: "typing.Self", word: str) -> bool:
 		return word.startswith("00-database-")
 
-	def fixInfoWord(self, word):
+	def fixInfoWord(self: "typing.Self", word: str) -> str:
 		return word
 
-	def setInfo(self, word: str, defi: str) -> None:
+	def setInfo(self: "typing.Self", word: str, defi: str) -> None:
 		if word == "00-database-short":
 			self._glos.setInfo("name", defi)
 			return
@@ -50,7 +54,7 @@ class Reader(TextGlossaryReader):
 		for line in defi.split("\n"):
 			if not line.startswith("##:"):
 				if lastKey:
-					glos.setInfo(key, f"{glos.getInfo(lastKey)}\n{line}")
+					glos.setInfo(word, f"{glos.getInfo(lastKey)}\n{line}")
 				continue
 
 			parts = line[3:].split(":")
@@ -60,7 +64,7 @@ class Reader(TextGlossaryReader):
 			value = ":".join(parts[1:])
 			glos.setInfo(key, value)
 
-	def nextBlock(self):
+	def nextBlock(self: "typing.Self") -> "tuple[str, str, None] | None":
 		if not self._file:
 			raise StopIteration
 		word = ""
@@ -99,7 +103,7 @@ class Reader(TextGlossaryReader):
 			defi = unescapeDefi("\n".join(defiLines))
 			if word.startswith("00-database-") and defi == "unknown":
 				log.info(f"ignoring {word} -> {defi}")
-				return
+				return None
 			word = word.split(self._headword_separator)
 			return word, defi, None
 
