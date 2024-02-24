@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING, Iterable, Iterator
 if TYPE_CHECKING:
 	from .glossary_types import EntryType, GlossaryExtendedType
 
+__all__ = ["reverseGlossary"]
+
 log = logging.getLogger("pyglossary")
 
 
 def reverseGlossary(
-	glos: GlossaryExtendedType,
+	glos: "GlossaryExtendedType",
 	savePath: str = "",
 	words: "list[str] | None" = None,
 	includeDefs: bool = False,
@@ -47,9 +49,7 @@ def reverseGlossary(
 	if saveStep < 2:
 		raise ValueError("saveStep must be more than 1")
 
-	entries: "list[EntryType]" = []
-	for entry in glos:
-		entries.append(entry)
+	entries: "list[EntryType]" = list(glos)
 	log.info(f"loaded {len(entries)} entries into memory")
 
 	if words:
@@ -65,7 +65,7 @@ def reverseGlossary(
 	glos.progressInit("Reversing")
 	wcThreshold = wordCount // 200 + 1
 
-	with open(savePath, "w") as saveFile:
+	with open(savePath, "w", encoding="utf-8") as saveFile:
 		for wordI in range(wordCount):
 			word = words[wordI]
 			if wordI % wcThreshold == 0:
@@ -97,12 +97,12 @@ def reverseGlossary(
 
 
 def takeOutputWords(
-	glos: GlossaryExtendedType,
+	glos: "GlossaryExtendedType",
 	entryIter: "Iterable[EntryType]",
 	minWordLen: int = 3,
 ) -> "list[str]":
 	# fr"[\w]{{{minWordLen},}}"
-	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.U)
+	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.UNICODE)
 	words = set()
 	progressbar, glos.progressbar = glos.progressbar, False
 	for entry in entryIter:
@@ -126,10 +126,10 @@ def searchWordInDef(
 ) -> "list[str]":
 	# searches word "st" in definitions of the glossary
 	splitPattern = re.compile(
-		"|".join([re.escape(x) for x in sepChars]),
-		re.U,
+		"|".join(re.escape(x) for x in sepChars),
+		re.UNICODE,
 	)
-	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.U)
+	wordPattern = re.compile(r"[\w]{%d,}" % minWordLen, re.UNICODE)
 	outRel: "list[tuple[str, float] | tuple[str, float, str]]" = []
 	for entry in entryIter:
 		words = entry.l_word

@@ -1,8 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import os
 import sys
 from os.path import join
+from pathlib import Path
 
 from mako.template import Template
 
@@ -12,6 +13,7 @@ rootDir = join(
 )
 sys.path.insert(0, rootDir)
 
+from pyglossary.core import userPluginsDir
 from pyglossary.glossary import Glossary
 
 Glossary.init(
@@ -26,7 +28,7 @@ Mako template engine:
 	Package python3-mako in Debian repos
 """
 
-hasIconSet = set([
+hasIconSet = {
 	"aard2_slob",
 	"appledict_bin",
 	"appledict",
@@ -42,13 +44,24 @@ hasIconSet = set([
 	"jmdict",
 	"kobo",
 	"lingoes_ldf",
+	"mobi",
 	"octopus_mdict",
 	"sql",
 	"stardict",
 	"tabfile",
 	"wiktionary_dump",
 	"zim",
-])
+}
+
+
+def pluginIsActive(p):
+	if not p.enable:
+		return False
+	if not (p.canRead or p.canWrite):
+		return False
+	if userPluginsDirPath in p.path.parents:
+		return False
+	return True
 
 
 def codeValue(x):
@@ -87,15 +100,15 @@ def kindEmoji(p):
 	}[kind]
 
 
-willNotSupportRead = set([
+willNotSupportRead = {
 	"epub2",
 	"kobo",
 	"mobi",
 	# "html_dir",
 	"info",
 	"sql",
-])
-willNotSupportWrite = set([
+}
+willNotSupportWrite = {
 	"appledict_bin",
 	"babylon_bgl",
 	"cc_cedict",
@@ -105,7 +118,9 @@ willNotSupportWrite = set([
 	"octopus_mdict",
 	"wiktionary_dump",
 	"xdxf",
-])
+	"wiktextract",
+	"jmnedict",
+}
 
 
 def readCheck(p):
@@ -120,7 +135,8 @@ def writeCheck(p):
 	return "✔" if p.canWrite else ""
 
 
-template = Template("""
+template = Template(
+	"""
 |   | Description |   | Read | Write| Doc Link |
 |:-:| ----------- |:-:|:----:|:----:| -------- |
 % for p in plugins:
@@ -134,7 +150,8 @@ Legend:
 - 🔢	Binary file
 - ✔		Supported
 - ❌ 	Will not be supported
-""")
+""",
+)
 
 # wiki = module.wiki
 # wiki_md = "―"
@@ -147,8 +164,11 @@ Legend:
 # 	website_md = module.website
 
 
+userPluginsDirPath = Path(userPluginsDir)
+plugins = [p for p in Glossary.plugins.values() if pluginIsActive(p)]
+
 text = template.render(
-	plugins=Glossary.plugins.values(),
+	plugins=plugins,
 	iconImg=iconImg,
 	kindEmoji=kindEmoji,
 	readCheck=readCheck,

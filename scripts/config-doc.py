@@ -19,7 +19,8 @@ ui.loadConfig(user=False)
 
 re_flag = re.compile("(\\s)(--[a-z\\-]+)")
 
-template = Template("""${paramsTable}
+template = Template(
+	"""${paramsTable}
 
 ${"Configuration Files"}
 ${"-------------------"}
@@ -48,7 +49,8 @@ For example:
 	glos.config = {
 		"lower": True,
 	}
-""")
+""",
+)
 
 with open(join(rootDir, "scripts/term-colors.json")) as _file:
 	termColors = json.load(_file)
@@ -62,21 +64,14 @@ def codeValue(x):
 
 
 def tableRowSep(width, c="-"):
-	return "+" + c + f"{c}+{c}".join([
-		c * w for w in width
-	]) + c + "+"
+	return "+" + c + f"{c}+{c}".join([c * w for w in width]) + c + "+"
 
 
 def renderTable(rows):
-	"""
-		rows[0] must be headers
-	"""
+	"""rows[0] must be headers."""
 	colN = len(rows[0])
 	width = [
-		max(
-			max(len(line) for line in row[i].split("\n"))
-			for row in rows
-		)
+		max(max(len(line) for line in row[i].split("\n")) for row in rows)
 		for i in range(colN)
 	]
 	rowSep = tableRowSep(width, "-")
@@ -88,13 +83,12 @@ def renderTable(rows):
 		for colI, cell in enumerate(row):
 			for lineI, line in enumerate(cell.split("\n")):
 				if lineI >= len(newRows):
-					newRows.append([
-						" " * width[colI]
-						for colI in range(colN)
-					])
+					newRows.append([" " * width[colI] for colI in range(colN)])
 				newRows[lineI][colI] = line.ljust(width[colI], " ")
-		for row in newRows:
-			lines.append("| " + " | ".join(row) + " |")
+		lines += [
+			"| " + " | ".join(row) + " |"
+			for row in newRows
+		]
 		if rowI == 0:
 			lines.append(headerSep)
 		else:
@@ -115,7 +109,7 @@ def getCommandFlagsMD(name, opt):
 		return ""
 	flag = opt.customFlag
 	if not flag:
-		flag = name.replace('_', '-')
+		flag = name.replace("_", "-")
 
 	if opt.falseComment:
 		return f"| ``--{flag}``\n| ``--no-{flag}``"
@@ -141,7 +135,7 @@ def jsonCodeValue(value):
 	return codeValue(json.dumps(value))
 
 
-def defaultOptionValue(name, opt, images):
+def defaultOptionValue(name, _opt, images):
 	value = ui.config[name]
 	valueMD = jsonCodeValue(value)
 
@@ -162,13 +156,16 @@ title += "\n" + len(title) * "-" + "\n"
 images = []
 
 paramsTable = title + renderTable(
-	[(
-		"Name",
-		"Command Flags",
-		"Type",
-		"Default",
-		"Comment",
-	)] + [
+	[
+		(
+			"Name",
+			"Command Flags",
+			"Type",
+			"Default",
+			"Comment",
+		),
+	]
+	+ [
 		(
 			codeValue(name),
 			getCommandFlagsMD(name, opt),

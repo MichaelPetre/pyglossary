@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import sys
-import typing
 import unittest
 from os.path import abspath, dirname
 
@@ -13,11 +11,11 @@ from pyglossary.html_utils import unescape_unicode
 
 
 class UnescapeUnicodeTest(unittest.TestCase):
-	def case(self: "typing.Self", text, expected):
+	def case(self, text, expected):
 		actual = unescape_unicode(text)
 		self.assertEqual(actual, expected)
 
-	def test(self: "typing.Self"):
+	def test(self):
 		self.case("&lt;", "&lt;")
 		self.case("&gt;", "&gt;")
 		self.case("&amp;", "&amp;")
@@ -53,6 +51,7 @@ def benchmark_main():
 	from random import choice
 
 	from english_words import english_words_set
+
 	english_words_list = list(english_words_set)
 	textList = []
 

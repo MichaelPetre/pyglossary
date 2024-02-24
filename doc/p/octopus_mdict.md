@@ -26,8 +26,6 @@
 | same_dir_data_files | `False` | bool | Read data files from same directory |
 | audio               | `False` | bool | Enable audio objects                |
 
-
-
 ### `python-lzo` is required for **some** MDX glossaries.
 
 First try converting your MDX file, if failed (`AssertionError` probably),
@@ -35,6 +33,6 @@ then try to install [LZO library and Python binding](../lzo.md).
 
 ### Dictionary Applications/Tools
 
-| Name & Website                 | Source code | License     | Platforms                  |
-| ------------------------------ | ----------- | ----------- | -------------------------- |
-| [MDict](https://www.mdict.cn/) | ―           | Proprietary | Android, iOS, Windows, Mac |
+| Name & Website                 | Source code | License     | Platforms                  | Language |
+| ------------------------------ | ----------- | ----------- | -------------------------- | -------- |
+| [MDict](https://www.mdict.cn/) | ―           | Proprietary | Android, iOS, Windows, Mac |          |

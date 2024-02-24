@@ -17,18 +17,18 @@
 | Wiki            | [Kobo eReader](https://en.wikipedia.org/wiki/Kobo_eReader) |
 | Website         | [www.kobo.com](https://www.kobo.com)                       |
 
-
 ### Dependencies for writing
 
 PyPI Links: [marisa-trie](https://pypi.org/project/marisa-trie)
 
 To install, run
+
 ```sh
 pip3 install marisa-trie
 ```
 
 ### Dictionary Applications/Tools
 
-| Name & Website                       | Source code | License     | Platforms    |
-| ------------------------------------ | ----------- | ----------- | ------------ |
-| [Kobo eReader](https://www.kobo.com) | ―           | Proprietary | Kobo eReader |
+| Name & Website                       | Source code | License     | Platforms    | Language |
+| ------------------------------------ | ----------- | ----------- | ------------ | -------- |
+| [Kobo eReader](https://www.kobo.com) | ―           | Proprietary | Kobo eReader |          |

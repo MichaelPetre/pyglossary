@@ -1,5 +1,5 @@
-#!/usr/bin/env python
 # coding: utf-8
+# mypy: ignore-errors
 
 # Copyright (C) 2016-2023 Saeed Rasooli on https://github.com/ilius/pyglossary/
 # Copyright (C) 2015 Z. H. Liu on https://github.com/zhansliu/writemdict
@@ -171,28 +171,26 @@
 # Steve Witham sw at remove-this tiac dot net
 # February, 2010
 
-import sys
-import typing
 
-assert sys.version_info >= (2, 6)
-
-
+import operator
 from struct import Struct
 
-little_u64 = Struct("<Q")  # 	little-endian 64-bit unsigned.
-# 	Unpacks to a tuple of one element!
+__all__ = ["Salsa20"]
+
+little_u64 = Struct("<Q")  # little-endian 64-bit unsigned.
+# Unpacks to a tuple of one element!
 
 little16_i32 = Struct("<16i")  # 16 little-endian 32-bit signed ints.
-little4_i32 = Struct("<4i")  #  4 little-endian 32-bit signed ints.
-little2_i32 = Struct("<2i")  #  2 little-endian 32-bit signed ints.
+little4_i32 = Struct("<4i")  # 4 little-endian 32-bit signed ints.
+little2_i32 = Struct("<2i")  # 2 little-endian 32-bit signed ints.
 
 _version = "p4.0"
 
 # ----------- Salsa20 class which emulates pySalsa20.Salsa20 ---------------
 
 
-class Salsa20(object):
-	def __init__(self: "typing.Self", key=None, IV=None, rounds=20) -> None:
+class Salsa20:
+	def __init__(self, key=None, IV=None, rounds=20) -> None:
 		self._lastChunk64 = True
 		self._IVbitlen = 64  # must be 64 bits
 		self.ctx = [0] * 16
@@ -203,8 +201,8 @@ class Salsa20(object):
 
 		self.setRounds(rounds)
 
-	def setKey(self: "typing.Self", key):
-		assert type(key) == bytes
+	def setKey(self, key):
+		assert isinstance(key, bytes)
 		ctx = self.ctx
 		if len(key) == 32:  # recommended
 			constants = b"expand 32-byte k"
@@ -215,11 +213,11 @@ class Salsa20(object):
 			ctx[1], ctx[2], ctx[3], ctx[4] = little4_i32.unpack(key[0:16])
 			ctx[11], ctx[12], ctx[13], ctx[14] = little4_i32.unpack(key[0:16])
 		else:
-			raise Exception("key length isn't 32 or 16 bytes.")
+			raise ValueError("key length isn't 32 or 16 bytes.")
 		ctx[0], ctx[5], ctx[10], ctx[15] = little4_i32.unpack(constants)
 
-	def setIV(self: "typing.Self", IV):
-		assert type(IV) == bytes
+	def setIV(self, IV):
+		assert isinstance(IV, bytes)
 		assert len(IV) * 8 == 64, "nonce (IV) not 64 bits"
 		self.IV = IV
 		ctx = self.ctx
@@ -237,12 +235,12 @@ class Salsa20(object):
 	def getCounter(self):
 		return little_u64.unpack(little2_i32.pack(*self.ctx[8:10]))[0]
 
-	def setRounds(self: "typing.Self", rounds, testing=False):
-		assert testing or rounds in [8, 12, 20], "rounds must be 8, 12, 20"
+	def setRounds(self, rounds, testing=False):
+		assert testing or rounds in (8, 12, 20), "rounds must be 8, 12, 20"
 		self.rounds = rounds
 
-	def encryptBytes(self: "typing.Self", data: bytes) -> bytes:
-		assert type(data) == bytes, "data must be byte string"
+	def encryptBytes(self, data: bytes) -> bytes:
+		assert isinstance(data, bytes), "data must be byte string"
 		assert self._lastChunk64, "previous chunk not multiple of 64 bytes"
 		lendata = len(data)
 		munged = bytearray(lendata)
@@ -262,19 +260,18 @@ class Salsa20(object):
 # --------------------------------------------------------------------------
 
 
-def salsa20_wordtobyte(input, nRounds=20, checkRounds=True):
-	"""Do nRounds Salsa20 rounds on a copy of
+def salsa20_wordtobyte(input_, nRounds=20, checkRounds=True):
+	"""
+	Do nRounds Salsa20 rounds on a copy of
 			input: list or tuple of 16 ints treated as little-endian unsigneds.
 	Returns a 64-byte string.
 	"""
+	assert isinstance(input_, list | tuple) and len(input_) == 16
+	assert not checkRounds or nRounds in (8, 12, 20)
 
-	assert type(input) in (list, tuple) and len(input) == 16
-	assert not (checkRounds) or (nRounds in [8, 12, 20])
+	x = list(input_)
 
-	x = list(input)
-
-	def XOR(a, b):
-		return a ^ b
+	XOR = operator.xor
 
 	ROTATE = rot32
 	PLUS = add32
@@ -316,8 +313,8 @@ def salsa20_wordtobyte(input, nRounds=20, checkRounds=True):
 		x[14] = XOR(x[14], ROTATE(PLUS(x[13], x[12]), 13))
 		x[15] = XOR(x[15], ROTATE(PLUS(x[14], x[13]), 18))
 
-	for idx in range(len(input)):
-		x[idx] = PLUS(x[idx], input[idx])
+	for idx, item in enumerate(input_):
+		x[idx] = PLUS(x[idx], item)
 	return little16_i32.pack(*x)
 
 
@@ -325,15 +322,18 @@ def salsa20_wordtobyte(input, nRounds=20, checkRounds=True):
 
 
 def trunc32(w):
-	"""Return the bottom 32 bits of w as a Python int.
-	This creates longs temporarily, but returns an int."""
+	"""
+	Return the bottom 32 bits of w as a Python int.
+	This creates longs temporarily, but returns an int.
+	"""
 	w = int((w & 0x7FFFFFFF) | -(w & 0x80000000))
-	assert type(w) == int
+	assert isinstance(w, int)
 	return w
 
 
 def add32(a, b):
-	"""Add two 32-bit words discarding carry above 32nd bit,
+	"""
+	Add two 32-bit words discarding carry above 32nd bit,
 	and without creating a Python long.
 	Timing shouldn't vary.
 	"""
@@ -343,7 +343,8 @@ def add32(a, b):
 
 
 def rot32(w, nLeft):
-	"""Rotate 32-bit word left by nLeft or right by -nLeft
+	"""
+	Rotate 32-bit word left by nLeft or right by -nLeft
 	without creating a Python long.
 	Timing depends on nLeft but not on w.
 	"""

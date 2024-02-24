@@ -19,16 +19,14 @@
 
 ### Read options
 
-| Name            | Default | Type | Comment                                 |
-| --------------- | ------- | ---- | --------------------------------------- |
-| encoding        |         | str  | Encoding/charset                        |
-| audio           | `False` | bool | Enable audio objects                    |
-| only_fix_markup | `False` | bool | Only fix markup, without tag conversion |
-
-
+| Name          | Default     | Type | Comment              |
+| ------------- | ----------- | ---- | -------------------- |
+| encoding      |             | str  | Encoding/charset     |
+| audio         | `True`      | bool | Enable audio objects |
+| example_color | `steelblue` | str  | Examples color       |
 
 ### Dictionary Applications/Tools
 
-| Name & Website                         | Source code | License     | Platforms                                           |
-| -------------------------------------- | ----------- | ----------- | --------------------------------------------------- |
-| [ABBYY Lingvo](https://www.lingvo.ru/) | ―           | Proprietary | Windows, Mac, Android, iOS, Windows Mobile, Symbian |
+| Name & Website                         | Source code | License     | Platforms                                           | Language |
+| -------------------------------------- | ----------- | ----------- | --------------------------------------------------- | -------- |
+| [ABBYY Lingvo](https://www.lingvo.ru/) | ―           | Proprietary | Windows, Mac, Android, iOS, Windows Mobile, Symbian |          |

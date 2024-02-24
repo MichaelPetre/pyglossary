@@ -28,7 +28,8 @@ Mako template engine:
 	Package python3-mako in Debian repos
 """
 
-template = Template("""${"##"} ${description}
+template = Template(
+	"""${"##"} ${description}
 
 ${topTables}
 
@@ -61,6 +62,7 @@ ${"### Dependencies for writing"}
 PyPI Links: ${writeDependsLinks}
 
 To install, run
+
 ```sh
 ${writeDependsCmd}
 ```
@@ -76,7 +78,8 @@ ${text.replace('(./doc/', '(../')}
 % endfor
 % endif
 ${toolsTable}
-""")
+""",
+)
 
 
 def codeValue(x):
@@ -113,19 +116,18 @@ def renderLink(title, url):
 
 
 def pypiLink(pypiName):
+	urlPath = pypiName.replace("==", "/")
+	urlPath = urlPath.replace(">", "%3E")
 	return renderLink(
-		pypiName.replace('==', ' '),
-		f"https://pypi.org/project/{pypiName.replace('==', '/')}",
+		pypiName.replace("==", " "),
+		f"https://pypi.org/project/{urlPath}",
 	)
 
 
 def makeDependsDoc(cls):
 	if not (cls and getattr(cls, "depends", None)):
 		return "", ""
-	links = ", ".join([
-		pypiLink(pypiName)
-		for pypiName in cls.depends.values()
-	])
+	links = ", ".join([pypiLink(pypiName) for pypiName in cls.depends.values()])
 	cmd = "pip3 install " + " ".join(
 		cls.depends.values(),
 	)
@@ -144,39 +146,21 @@ def renderCell(value):
 
 
 def renderTable(rows):
-	"""
-		rows[0] must be headers
-	"""
+	"""rows[0] must be headers."""
+	rows = [[renderCell(cell) for cell in row] for row in rows]
+	width = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
 	rows = [
-		[
-			renderCell(cell) for cell in row
-		]
-		for row in rows
-	]
-	width = [
-		max(len(row[i]) for row in rows)
-		for i in range(len(rows[0]))
-	]
-	rows = [
-		[
-			cell.ljust(width[i], " ")
-			for i, cell in enumerate(row)
-		]
+		[cell.ljust(width[i], " ") for i, cell in enumerate(row)]
 		for rowI, row in enumerate(rows)
 	]
-	rows.insert(1, [
-		"-" * colWidth
-		for colWidth in width
-	])
-	return "\n".join([
-		"| " + " | ".join(row) + " |"
-		for row in rows
-	])
+	rows.insert(1, ["-" * colWidth for colWidth in width])
+	return "\n".join(["| " + " | ".join(row) + " |" for row in rows])
 
 
 def renderRWOptions(options):
 	return renderTable(
-		[("Name", "Default", "Type", "Comment")] + [
+		[("Name", "Default", "Type", "Comment")]
+		+ [
 			(
 				optName,
 				codeValue(default),
@@ -204,16 +188,12 @@ def getToolSourceLink(tool):
 		return "―"
 	_, title = url.split("://")
 	if title.startswith("github.com/"):
-		title = "@" + title[len("github.com/"):]
+		title = "@" + title[len("github.com/") :]
 	return renderLink(title, url)
 
 
 userPluginsDirPath = Path(userPluginsDir)
-plugins = [
-	p
-	for p in Glossary.plugins.values()
-	if pluginIsActive(p)
-]
+plugins = [p for p in Glossary.plugins.values() if pluginIsActive(p)]
 
 toolsDir = join(rootDir, "plugins-meta", "tools")
 
@@ -226,7 +206,7 @@ for p in plugins:
 	wiki_md = "―"
 	if wiki:
 		if wiki.startswith("https://github.com/"):
-			wiki_title = "@" + wiki[len("https://github.com/"):]
+			wiki_title = "@" + wiki[len("https://github.com/") :]
 		else:
 			wiki_title = wiki.split("/")[-1].replace("_", " ")
 		wiki_md = renderLink(wiki_title, wiki)
@@ -269,30 +249,27 @@ for p in plugins:
 			tool.update({"name": toolName})
 		tools = tools_toml.values()
 
-	generalInfoTable = "### General Information\n\n" + renderTable([
-		("Attribute", "Value"),
-		("Name", p.name),
-		("snake_case_name", p.lname),
-		("Description", p.description),
-		("Extensions", ", ".join([
-			codeValue(ext) for ext in p.extensions
-		])),
-		("Read support", yesNo(p.canRead)),
-		("Write support", yesNo(p.canWrite)),
-		("Single-file", yesNo(p.singleFile)),
-		("Kind", f"{kindEmoji(module.kind)} {module.kind}"),
-		("Sort-on-write", p.sortOnWrite),
-		("Sort key", sortKeyName(p)),
-		("Wiki", wiki_md),
-		("Website", website_md),
-	])
+	generalInfoTable = "### General Information\n\n" + renderTable(
+		[
+			("Attribute", "Value"),
+			("Name", p.name),
+			("snake_case_name", p.lname),
+			("Description", p.description),
+			("Extensions", ", ".join([codeValue(ext) for ext in p.extensions])),
+			("Read support", yesNo(p.canRead)),
+			("Write support", yesNo(p.canWrite)),
+			("Single-file", yesNo(p.singleFile)),
+			("Kind", f"{kindEmoji(module.kind)} {module.kind}"),
+			("Sort-on-write", p.sortOnWrite),
+			("Sort key", sortKeyName(p)),
+			("Wiki", wiki_md),
+			("Website", website_md),
+		],
+	)
 	topTables = generalInfoTable
 
 	try:
-		optionsType = {
-			optName: opt.typ
-			for optName, opt in optionsProp.items()
-		}
+		optionsType = {optName: opt.typ for optName, opt in optionsProp.items()}
 	except Exception:
 		print(f"{optionsProp = }")
 		raise
@@ -312,12 +289,22 @@ for p in plugins:
 	toolsTable = ""
 	if tools:
 		toolsTable = "### Dictionary Applications/Tools\n\n" + renderTable(
-			[("Name & Website", "Source code", "License", "Platforms")] + [
+			[
+				(
+					"Name & Website",
+					"Source code",
+					"License",
+					"Platforms",
+					"Language",
+				),
+			]
+			+ [
 				(
 					f"[{tool['name']}]({tool['web']})",
 					getToolSourceLink(tool),
 					tool["license"],
 					", ".join(tool["platforms"]),
+					tool.get("plang", ""),
 				)
 				for tool in tools
 			],
@@ -340,6 +327,10 @@ for p in plugins:
 		extraDocs=extraDocs,
 		toolsTable=toolsTable,
 	)
+	for _i in range(3):
+		text = text.replace("\n\n\n", "\n\n")
+	if text.endswith("\n\n"):
+		text = text[:-1]
 	with open(
 		join(rootDir, "doc", "p", f"{p.lname}.md"),
 		mode="w",
@@ -349,7 +340,8 @@ for p in plugins:
 		_file.write(text)
 
 indexText = renderTable(
-	[("Description", "Name", "Doc Link")] + [
+	[("Description", "Name", "Doc Link")]
+	+ [
 		(
 			p.description,
 			p.name,

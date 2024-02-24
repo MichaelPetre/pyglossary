@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 # ui_cmd.py
 #
 # Copyright © 2008-2021 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
@@ -18,12 +19,11 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
-import logging
 import os
 import sys
-import typing
+from collections.abc import Mapping
 from os.path import join
-from typing import Any, Dict, Mapping
+from typing import TYPE_CHECKING, Any
 
 from pyglossary.core import dataDir, log
 from pyglossary.glossary_v2 import ConvertArgs, Glossary
@@ -31,8 +31,13 @@ from pyglossary.glossary_v2 import ConvertArgs, Glossary
 from .base import UIBase, fread
 from .wcwidth import wcswidth
 
+if TYPE_CHECKING:
+	import logging
 
-def wc_ljust(text: str, length: int, padding: str = ' ') -> str:
+__all__ = ["COMMAND", "UI", "parseFormatOptionsStr", "printHelp"]
+
+
+def wc_ljust(text: str, length: int, padding: str = " ") -> str:
 	return text + padding * max(0, (length - wcswidth(text)))
 
 
@@ -51,61 +56,59 @@ COMMAND = "pyglossary"
 
 
 def getColWidth(subject: str, strings: "list[str]") -> int:
-	return max(
-		len(x) for x in [subject] + strings
-	)
+	return max(len(x) for x in [subject] + strings)
 
 
 def getFormatsTable(names: "list[str]", header: str) -> str:
-	descriptions = [
-		Glossary.plugins[name].description
-		for name in names
-	]
-	extensions = [
-		" ".join(Glossary.plugins[name].extensions)
-		for name in names
-	]
+	descriptions = [Glossary.plugins[name].description for name in names]
+	extensions = [" ".join(Glossary.plugins[name].extensions) for name in names]
 
 	nameWidth = getColWidth("Name", names)
 	descriptionWidth = getColWidth("Description", descriptions)
 	extensionsWidth = getColWidth("Extensions", extensions)
 
-	lines = ["\n"]
-	lines.append(startBold + header + endFormat)
-
-	lines.append(
-		" | ".join([
-			"Name".center(nameWidth),
-			"Description".center(descriptionWidth),
-			"Extensions".center(extensionsWidth),
-		]),
-	)
-	lines.append(
-		"-+-".join([
-			"-" * nameWidth,
-			"-" * descriptionWidth,
-			"-" * extensionsWidth,
-		]),
-	)
+	lines = [
+		"\n",
+		startBold + header + endFormat,
+		" | ".join(
+			[
+				"Name".center(nameWidth),
+				"Description".center(descriptionWidth),
+				"Extensions".center(extensionsWidth),
+			],
+		),
+		"-+-".join(
+			[
+				"-" * nameWidth,
+				"-" * descriptionWidth,
+				"-" * extensionsWidth,
+			],
+		),
+	]
 	for index, name in enumerate(names):
 		lines.append(
-			" | ".join([
-				name.ljust(nameWidth),
-				descriptions[index].ljust(descriptionWidth),
-				extensions[index].ljust(extensionsWidth),
-			]),
+			" | ".join(
+				[
+					name.ljust(nameWidth),
+					descriptions[index].ljust(descriptionWidth),
+					extensions[index].ljust(extensionsWidth),
+				],
+			),
 		)
 
 	return "\n".join(lines)
 
 
-def help() -> None:
+def printHelp() -> None:
 	import string
+
 	text = fread(join(dataDir, "help"))
-	text = text.replace("<b>", startBold)\
-		.replace("<u>", startUnderline)\
-		.replace("</b>", endFormat)\
+	text = (
+		text.replace("<b>", startBold)
+		.replace("<u>", startUnderline)
+		.replace("</b>", endFormat)
 		.replace("</u>", endFormat)
+	)
 	text = string.Template(text).substitute(
 		CMD=COMMAND,
 	)
@@ -115,10 +118,7 @@ def help() -> None:
 
 
 def parseFormatOptionsStr(st: str) -> "dict[str, Any] | None":
-	"""
-		prints error and returns None if failed to parse one option
-	"""
-
+	"""Prints error and returns None if failed to parse one option."""
 	st = st.strip()
 	if not st:
 		return {}
@@ -136,32 +136,23 @@ def parseFormatOptionsStr(st: str) -> "dict[str, Any] | None":
 		if not key:
 			log.critical(f"bad option syntax: {part!r}")
 			return None
-		value = part[eq + 1:].strip()
+		value = part[eq + 1 :].strip()
 		opt[key] = value
 	return opt
 
 
-def encodeFormatOptions(opt: "Dict") -> str:
-	if not opt:
-		return ""
-	parts = []
-	for key, value in opt.items():
-		parts.append(f"{key}={value}")
-	return ";".join(parts)
-
-
-class NullObj(object):
-	def __getattr__(self: "typing.Self", attr: str) -> "NullObj":
+class NullObj:
+	def __getattr__(self, attr: str) -> "NullObj":
 		return self
 
-	def __setattr__(self: "typing.Self", attr: str, value: "Any") -> None:
+	def __setattr__(self, attr: str, value: "Any") -> None:
 		pass
 
-	def __setitem__(self: "typing.Self", key: str, value: "Any") -> None:
+	def __setitem__(self, key: str, value: "Any") -> None:
 		pass
 
 	def __call__(
-		self: "typing.Self",
+		self,
 		*args: "tuple[Any]",
 		**kwargs: "Mapping[Any]",
 	) -> None:
@@ -170,7 +161,7 @@ class NullObj(object):
 
 class UI(UIBase):
 	def __init__(
-		self: "typing.Self",
+		self,
 		progressbar: bool = True,
 	) -> None:
 		UIBase.__init__(self)
@@ -181,8 +172,8 @@ class UI(UIBase):
 		self._progressbar = progressbar
 
 	def onSigInt(
-		self: "typing.Self",
-		*args: "tuple[Any]",
+		self,
+		*_args: "tuple[Any]",
 	) -> None:
 		log.info("")
 		if self._toPause:
@@ -192,26 +183,30 @@ class UI(UIBase):
 			self._toPause = True
 			log.info("Please wait...")
 
-	def setText(self: "typing.Self", text: str) -> None:
+	def setText(self, text: str) -> None:
 		self.pbar.widgets[0] = text
 
-	def fixLogger(self: "typing.Self") -> None:
+	def fixLogger(self) -> None:
 		for h in log.handlers:
 			if h.name == "std":
 				self.fixLogHandler(h)
 				return
 
-	def fillMessage(self: "typing.Self", msg: str) -> str:
-		return "\r" + wc_ljust(msg, self.pbar.term_width)
+	def fillMessage(self, msg: str) -> str:
+		term_width = self.pbar.term_width
+		if term_width is None:
+			# FIXME: why?
+			return msg
+		return "\r" + wc_ljust(msg, term_width)
 
-	def fixLogHandler(self: "typing.Self", h: "logging.Handler") -> None:
+	def fixLogHandler(self, h: "logging.Handler") -> None:
 		def reset() -> None:
 			h.formatter.fill = None
 
 		self._resetLogFormatter = reset
 		h.formatter.fill = self.fillMessage
 
-	def progressInit(self: "typing.Self", title: str) -> None:
+	def progressInit(self, title: str) -> None:
 		try:
 			from .pbar_tqdm import createProgressBar
 		except ModuleNotFoundError:
@@ -219,20 +214,25 @@ class UI(UIBase):
 		self.pbar = createProgressBar(title)
 		self.fixLogger()
 
-	def progress(self: "typing.Self", ratio: float, text: str = "") -> None:
+	def progress(
+		self,
+		ratio: float,
+		text: str = "",  # noqa: ARG002
+	) -> None:
 		self.pbar.update(ratio)
 
-	def progressEnd(self: "typing.Self") -> None:
+	def progressEnd(self) -> None:
 		self.pbar.finish()
 		if self._resetLogFormatter:
 			self._resetLogFormatter()
 
 	def reverseLoop(
-		self: "typing.Self",
-		*args: "tuple[Any]",
+		self,
+		*_args: "tuple[Any]",
 		**kwargs: "Mapping[Any]",
 	) -> None:
 		from pyglossary.reverse import reverseGlossary
+
 		reverseKwArgs = {}
 		for key in (
 			"words",
@@ -256,24 +256,23 @@ class UI(UIBase):
 		for _ in reverseGlossary(self.glos, **reverseKwArgs):
 			if self._toPause:
 				log.info(
-					"Reverse is paused."
-					" Press Enter to continue, and Ctrl+C to exit",
+					"Reverse is paused. Press Enter to continue, and Ctrl+C to exit",
 				)
 				input()
 				self._toPause = False
 
 	def run(
-		self: "typing.Self",
+		self,
 		inputFilename: str = "",
 		outputFilename: str = "",
 		inputFormat: str = "",
 		outputFormat: str = "",
 		reverse: bool = False,
-		config: "Dict | None" = None,
-		readOptions: "Dict | None" = None,
-		writeOptions: "Dict | None" = None,
-		convertOptions: "Dict | None" = None,
-		glossarySetAttrs: "Dict | None" = None,
+		config: "dict | None" = None,
+		readOptions: "dict | None" = None,
+		writeOptions: "dict | None" = None,
+		convertOptions: "dict | None" = None,
+		glossarySetAttrs: "dict | None" = None,
 	) -> bool:
 		if config is None:
 			config = {}
@@ -308,8 +307,7 @@ class UI(UIBase):
 					log.error(f"invalid write format {outputFormat}")
 					log.error(f"try: {COMMAND} --help")
 					return False
-				else:
-					outputFilename = os.path.splitext(inputFilename)[0] + ext
+				outputFilename = os.path.splitext(inputFilename)[0] + ext
 			else:
 				log.error("neither output file nor output format is given")
 				log.error(f"try: {COMMAND} --help")
@@ -324,6 +322,7 @@ class UI(UIBase):
 
 		if reverse:
 			import signal
+
 			signal.signal(signal.SIGINT, self.onSigInt)  # good place? FIXME
 			readOptions["direct"] = True
 			if not glos.read(
@@ -337,15 +336,17 @@ class UI(UIBase):
 			self.pbar.update_step = 0.1
 			self.reverseLoop(savePath=outputFilename)
 		else:
-			finalOutputFile = self.glos.convert(ConvertArgs(
-				inputFilename,
-				inputFormat=inputFormat,
-				outputFilename=outputFilename,
-				outputFormat=outputFormat,
-				readOptions=readOptions,
-				writeOptions=writeOptions,
-				**convertOptions,
-			))
+			finalOutputFile = self.glos.convert(
+				ConvertArgs(
+					inputFilename,
+					inputFormat=inputFormat,
+					outputFilename=outputFilename,
+					outputFormat=outputFormat,
+					readOptions=readOptions,
+					writeOptions=writeOptions,
+					**convertOptions,
+				),
+			)
 			return bool(finalOutputFile)
 
 		return True

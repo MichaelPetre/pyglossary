@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import os
-import typing
-from os.path import isdir, join
-from typing import Generator, Iterator
+from collections.abc import Generator, Iterator
+from os.path import isdir, isfile, join
 
 from pyglossary.compression import stdCompressions
 from pyglossary.core import log
@@ -19,6 +18,8 @@ from pyglossary.text_utils import (
 	splitByBarUnescapeNTB,
 	unescapeNTB,
 )
+
+__all__ = ["Reader"]
 
 enable = True
 lname = "tabfile"
@@ -48,35 +49,39 @@ optionsProp: "dict[str, Option]" = {
 
 
 class Reader(TextGlossaryReader):
-	def __init__(self: "typing.Self", glos: GlossaryType, hasInfo: bool = True) -> None:
+	def __init__(self, glos: GlossaryType, hasInfo: bool = True) -> None:
 		TextGlossaryReader.__init__(self, glos, hasInfo=hasInfo)
 		self._resDir = ""
-		self._resFileNames = []
+		self._resFileNames: "list[str]" = []
 
-	def open(self: "typing.Self", filename: str) -> "Iterator[tuple[int, int]]":
+	def open(self, filename: str) -> "Iterator[tuple[int, int]] | None":
 		yield from TextGlossaryReader.openGen(self, filename)
 		resDir = f"{filename}_res"
 		if isdir(resDir):
 			self._resDir = resDir
 			self._resFileNames = os.listdir(self._resDir)
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType | None]":
 		yield from TextGlossaryReader.__iter__(self)
 		resDir = self._resDir
 		for fname in self._resFileNames:
-			with open(join(resDir, fname), "rb") as _file:
+			fpath = join(resDir, fname)
+			if not isfile(fpath):
+				log.error(f"No such file: {fpath}")
+				continue
+			with open(fpath, "rb") as _file:
 				yield self._glos.newDataEntry(
 					fname,
 					_file.read(),
 				)
 
-	def isInfoWord(self: "typing.Self", word: str) -> bool:
+	def isInfoWord(self, word: str) -> bool:
 		return word.startswith("#")
 
-	def fixInfoWord(self: "typing.Self", word: str) -> str:
+	def fixInfoWord(self, word: str) -> str:
 		return word.lstrip("#")
 
-	def nextBlock(self: "typing.Self") -> "tuple[str, str, None] | None":
+	def nextBlock(self) -> "tuple[str | list[str], str, None] | None":
 		if not self._file:
 			raise StopIteration
 		line = self.readline()
@@ -86,9 +91,10 @@ class Reader(TextGlossaryReader):
 		if not line:
 			return None
 		###
+		word: "str | list[str]"
 		word, tab, defi = line.partition("\t")
 		if not tab:
-			log.error(
+			log.warning(
 				f"Warning: line starting with {line[:10]!r} has no tab!",
 			)
 			return None
@@ -105,7 +111,7 @@ class Reader(TextGlossaryReader):
 		return word, defi, None
 
 
-class Writer(object):
+class Writer:
 	_encoding: str = "utf-8"
 	_enable_info: bool = True
 	_resources: bool = True
@@ -114,22 +120,23 @@ class Writer(object):
 
 	compressions = stdCompressions
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
+		self._filename = ""
 
 	def open(
-		self: "typing.Self",
+		self,
 		filename: str,
 	) -> None:
 		self._filename = filename
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		pass
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		from pyglossary.text_utils import escapeNTB, joinByBar
 		from pyglossary.text_writer import TextGlossaryWriter
+
 		writer = TextGlossaryWriter(
 			self._glos,
 			entryFmt="{word}\t{defi}\n",

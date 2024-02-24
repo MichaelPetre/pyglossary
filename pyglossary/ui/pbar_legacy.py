@@ -1,4 +1,8 @@
+# mypy: ignore-errors
+
 from . import progressbar as pb
+
+__all__ = ["createProgressBar"]
 
 
 def createProgressBar(title: str):
@@ -12,7 +16,8 @@ def createProgressBar(title: str):
 		pb.AnimatedMarker(),
 		" ",
 		pb.Bar(marker="█"),
-		pb.Percentage(), " ",
+		pb.Percentage(),
+		" ",
 		pb.ETA(),
 	]
 	pbar.start(num_intervals=1000)

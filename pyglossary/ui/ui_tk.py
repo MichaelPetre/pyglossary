@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 # ui_tk.py
 #
 # Copyright © 2009-2021 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
@@ -20,11 +21,11 @@ import logging
 import os
 import tkinter as tk
 import traceback
-import typing
+from collections.abc import Callable
 from os.path import abspath, isfile, join, splitext
 from tkinter import filedialog, tix, ttk
 from tkinter import font as tkFont
-from typing import Any, Callable, Dict, Literal
+from typing import Any, Literal
 
 from pyglossary import core
 from pyglossary.core import confDir, homeDir
@@ -41,19 +42,12 @@ from .base import (
 
 log = logging.getLogger("pyglossary")
 
-pluginByDesc = {
-	plugin.description: plugin
-	for plugin in Glossary.plugins.values()
-}
+pluginByDesc = {plugin.description: plugin for plugin in Glossary.plugins.values()}
 readDesc = [
-	plugin.description
-	for plugin in Glossary.plugins.values()
-	if plugin.canRead
+	plugin.description for plugin in Glossary.plugins.values() if plugin.canRead
 ]
 writeDesc = [
-	plugin.description
-	for plugin in Glossary.plugins.values()
-	if plugin.canWrite
+	plugin.description for plugin in Glossary.plugins.values() if plugin.canWrite
 ]
 
 
@@ -66,8 +60,8 @@ def set_window_icon(window):
 
 def decodeGeometry(gs):
 	"""
-		example for gs: "253x252+30+684"
-		returns (x, y, w, h)
+	Example for gs: "253x252+30+684"
+	returns (x, y, w, h).
 	"""
 	p = gs.split("+")
 	w, h = p[0].split("x")
@@ -84,8 +78,8 @@ def encodeLocation(x, y):
 
 def centerWindow(win):
 	"""
-	centers a tkinter window
-	:param win: the root or Toplevel window to center
+	Centers a tkinter window
+	:param win: the root or Toplevel window to center.
 	"""
 	win.update_idletasks()
 	width = win.winfo_width()
@@ -103,7 +97,7 @@ def centerWindow(win):
 def newButton(*args, **kwargs):
 	button = tk.Button(*args, **kwargs)
 
-	def onEnter(event=None):
+	def onEnter(_event):
 		button.invoke()
 
 	button.bind("<Return>", onEnter)
@@ -114,7 +108,7 @@ def newButton(*args, **kwargs):
 def newTTKButton(*args, **kwargs):
 	button = ttk.Button(*args, **kwargs)
 
-	def onEnter(event=None):
+	def onEnter(_event):
 		button.invoke()
 
 	button.bind("<Return>", onEnter)
@@ -153,14 +147,14 @@ def newReadOnlyText(
 	# comment this out for older versions of Tkinter
 	widget.configure(
 		inactiveselectbackground=widget.cget("selectbackground"),
-		bg=parent.cget('bg'),
+		bg=parent.cget("bg"),
 		relief="flat",
 	)
 	return widget
 
 
 class TkTextLogHandler(logging.Handler):
-	def __init__(self: "typing.Self", tktext) -> None:
+	def __init__(self, tktext) -> None:
 		logging.Handler.__init__(self)
 		#####
 		tktext.tag_config("CRITICAL", foreground="#ff0000")
@@ -172,7 +166,7 @@ class TkTextLogHandler(logging.Handler):
 		###
 		self.tktext = tktext
 
-	def emit(self: "typing.Self", record):
+	def emit(self, record):
 		msg = ""
 		if record.getMessage():
 			msg = self.format(record)
@@ -195,10 +189,8 @@ class TkTextLogHandler(logging.Handler):
 
 # Monkey-patch Tkinter
 # http://stackoverflow.com/questions/5191830/python-exception-logging
-def CallWrapper__call__(self: "typing.Self", *args):
-	"""
-		Apply first function SUBST to arguments, than FUNC.
-	"""
+def CallWrapper__call__(self, *args):
+	"""Apply first function SUBST to arguments, than FUNC."""
 	if self.subst:
 		args = self.subst(*args)
 	try:
@@ -211,12 +203,14 @@ tk.CallWrapper.__call__ = CallWrapper__call__
 
 
 class ProgressBar(tix.Frame):
+
 	"""
-	This comes from John Grayson's book "Python and Tkinter programming"
-	Edited by Saeed Rasooli
+	Comes from John Grayson's book "Python and Tkinter programming"
+	Edited by Saeed Rasooli.
 	"""
+
 	def __init__(
-		self: "typing.Self",
+		self,
 		rootWin=None,
 		orientation="horizontal",
 		min_=0,
@@ -273,13 +267,13 @@ class ProgressBar(tix.Frame):
 		self.bind("<Configure>", self.update)
 		self.canvas.pack(side="top", fill="x", expand="no")
 
-	def updateProgress(self: "typing.Self", value, _max=None, text=""):
+	def updateProgress(self, value, _max=None, text=""):
 		if _max:
 			self.max = _max
 		self.value = value
 		self.update(None, text)
 
-	def update(self: "typing.Self", event=None, labelText=""):
+	def update(self, event=None, labelText=""):  # noqa: ARG002
 		# Trim the values to be between min and max
 		value = self.value
 		if value > self.max:
@@ -321,7 +315,7 @@ class ProgressBar(tix.Frame):
 
 class FormatDialog(tix.Toplevel):
 	def __init__(
-		self: "typing.Self",
+		self,
 		descList: "list[str]",
 		title: str,
 		onOk: "Callable",
@@ -339,17 +333,19 @@ class FormatDialog(tix.Toplevel):
 		if title:
 			self.title(title)
 		set_window_icon(self)
-		self.bind('<Escape>', lambda e: self.destroy())
+		self.bind("<Escape>", lambda _e: self.destroy())
 
 		px, py, pw, ph = decodeGeometry(button.winfo_toplevel().geometry())
 		width = 400
 		height = 400
-		self.geometry(encodeGeometry(
-			px + pw // 2 - width // 2,
-			py + ph // 2 - height // 2,
-			width,
-			height,
-		))
+		self.geometry(
+			encodeGeometry(
+				px + pw // 2 - width // 2,
+				py + ph // 2 - height // 2,
+				width,
+				height,
+			),
+		)
 
 		entryBox = tk.Frame(master=self)
 		label = tk.Label(master=entryBox, text="Search: ")
@@ -421,11 +417,11 @@ class FormatDialog(tix.Toplevel):
 
 		# self.bind("<KeyPress>", self.onKeyPress)
 
-	def setActiveRow(self: "typing.Self", desc):
+	def setActiveRow(self, desc):
 		self.treev.selection_set(desc)
 		self.treev.see(desc)
 
-	def updateTree(self: "typing.Self"):
+	def updateTree(self):
 		treev = self.treev
 		current = treev.get_children()
 		if current:
@@ -436,7 +432,7 @@ class FormatDialog(tix.Toplevel):
 		if self.activeDesc in self.items:
 			self.setActiveRow(self.activeDesc)
 
-	def onEntryKeyRelease(self: "typing.Self", event):
+	def onEntryKeyRelease(self, _event):
 		text = self.entry.get().strip()
 		if text == self.lastSearch:
 			return
@@ -462,16 +458,16 @@ class FormatDialog(tix.Toplevel):
 		self.updateTree()
 		self.lastSearch = text
 
-	def onTreeDoubleClick(self: "typing.Self", event):
+	def onTreeDoubleClick(self, _event):
 		self.okClicked()
 
-	def cancelClicked(self: "typing.Self"):
+	def cancelClicked(self):
 		self.destroy()
 
-	def onReturnPress(self: "typing.Self", event):
+	def onReturnPress(self, _event):
 		self.okClicked()
 
-	def onDownPress(self: "typing.Self", event):
+	def onDownPress(self, _event):
 		treev = self.treev
 		selection = treev.selection()
 		if selection:
@@ -483,7 +479,7 @@ class FormatDialog(tix.Toplevel):
 				self.setActiveRow(self.items[0])
 		treev.focus()
 
-	def onUpPress(self: "typing.Self", event):
+	def onUpPress(self, _event):
 		treev = self.treev
 		treev.focus()
 		selection = treev.selection()
@@ -495,16 +491,13 @@ class FormatDialog(tix.Toplevel):
 		if nextDesc:
 			self.setActiveRow(nextDesc)
 
-	def onKeyPress(self: "typing.Self", event):
+	def onKeyPress(self, event):
 		print(f"FormatDialog: onKeyPress: {event}")
 
-	def okClicked(self: "typing.Self"):
+	def okClicked(self):
 		treev = self.treev
 		selectedList = treev.selection()
-		if selectedList:
-			desc = selectedList[0]
-		else:
-			desc = ""
+		desc = selectedList[0] if selectedList else ""
 		self.onOk(desc)
 		self.destroy()
 
@@ -513,7 +506,7 @@ class FormatButton(tk.Button):
 	noneLabel = "[Select Format]"
 
 	def __init__(
-		self: "typing.Self",
+		self,
 		descList: "list[str]",
 		dialogTitle: str,
 		onChange: "Callable",
@@ -534,24 +527,24 @@ class FormatButton(tk.Button):
 		self.bind("<Return>", self.onEnter)
 		self.bind("<KP_Enter>", self.onEnter)
 
-	def onEnter(self: "typing.Self", event=None):
+	def onEnter(self, _event=None):
 		self.invoke()
 
-	def onChange(self: "typing.Self", desc):
-		self.set(desc)
+	def onChange(self, desc):
+		self.setValue(desc)
 		self._onChange(desc)
 
-	def get(self: "typing.Self"):
+	def get(self):
 		return self.activeDesc
 
-	def set(self: "typing.Self", desc):
+	def setValue(self, desc):
 		if desc:
 			self.var.set(desc)
 		else:
 			self.var.set(self.noneLabel)
 		self.activeDesc = desc
 
-	def onClick(self: "typing.Self"):
+	def onClick(self):
 		dialog = FormatDialog(
 			descList=self.descList,
 			title=self.dialogTitle,
@@ -569,13 +562,19 @@ class FormatOptionsDialog(tix.Toplevel):
 		"Write": Glossary.formatsWriteOptions,
 	}
 
-	def __init__(self: "typing.Self", format, kind, values, master=None) -> None:
+	def __init__(
+		self,
+		format,
+		kind,
+		values,
+		master=None,  # noqa: ARG002
+	) -> None:
 		tix.Toplevel.__init__(self)
 		# bg="#0f0" does not work
 		self.resizable(width=True, height=True)
 		self.title(kind + " Options")
 		set_window_icon(self)
-		self.bind('<Escape>', lambda e: self.destroy())
+		self.bind("<Escape>", lambda _e: self.destroy())
 
 		self.menu = None
 		self.format = format
@@ -597,7 +596,7 @@ class FormatOptionsDialog(tix.Toplevel):
 		okButton.pack(side="right")
 		buttonBox.pack(fill="x")
 
-	def createOptionsList(self: "typing.Self"):
+	def createOptionsList(self):
 		values = self.values
 		self.valueCol = "#3"
 		cols = [
@@ -634,7 +633,7 @@ class FormatOptionsDialog(tix.Toplevel):
 			prop = self.optionsProp[optName]
 			comment = prop.longComment
 			if len(comment) > self.commentLen:
-				comment = comment[:self.commentLen] + "..."
+				comment = comment[: self.commentLen] + "..."
 			row = [
 				int(optName in values),
 				optName,
@@ -653,7 +652,7 @@ class FormatOptionsDialog(tix.Toplevel):
 					treev.column(cols[col_i], width=col_w)
 
 	def valueMenuItemCustomSelected(
-		self: "typing.Self",
+		self,
 		treev,
 		format: str,
 		optName: str,
@@ -669,17 +668,19 @@ class FormatOptionsDialog(tix.Toplevel):
 		dialog.resizable(width=True, height=True)
 		dialog.title(optName)
 		set_window_icon(dialog)
-		dialog.bind('<Escape>', lambda e: dialog.destroy())
+		dialog.bind("<Escape>", lambda _e: dialog.destroy())
 
 		px, py, pw, ph = decodeGeometry(treev.winfo_toplevel().geometry())
 		width = 300
 		height = 100
-		dialog.geometry(encodeGeometry(
-			px + pw // 2 - width // 2,
-			py + ph // 2 - height // 2,
-			width,
-			height,
-		))
+		dialog.geometry(
+			encodeGeometry(
+				px + pw // 2 - width // 2,
+				py + ph // 2 - height // 2,
+				width,
+				height,
+			),
+		)
 
 		frame = tix.Frame(master=dialog)
 
@@ -692,7 +693,7 @@ class FormatOptionsDialog(tix.Toplevel):
 
 		prop = Glossary.plugins[format].optionsProp[optName]
 
-		def customOkClicked(event=None):
+		def customOkClicked(_event=None):
 			rawValue = entry.get()
 			if not prop.validateRaw(rawValue):
 				log.error(f"invalid {prop.typ} value: {optName} = {rawValue!r}")
@@ -721,7 +722,7 @@ class FormatOptionsDialog(tix.Toplevel):
 		frame.pack(fill="x")
 		dialog.focus()
 
-	def valueMenuItemSelected(self: "typing.Self", optName, menu, value):
+	def valueMenuItemSelected(self, optName, menu, value):
 		treev = self.treev
 		treev.set(optName, self.valueCol, value)
 		treev.set(optName, "#1", "1")  # enable it
@@ -731,7 +732,7 @@ class FormatOptionsDialog(tix.Toplevel):
 		menu.destroy()
 		self.menu = None
 
-	def valueCellClicked(self: "typing.Self", event, optName):
+	def valueCellClicked(self, event, optName):
 		if not optName:
 			return
 		treev = self.treev
@@ -782,6 +783,7 @@ class FormatOptionsDialog(tix.Toplevel):
 		def valueMenuItemSelectedCommand(value):
 			def callback():
 				self.valueMenuItemSelected(optName, menu, value)
+
 			return callback
 
 		if groupedValues:
@@ -828,7 +830,7 @@ class FormatOptionsDialog(tix.Toplevel):
 			# make sure to release the grab (Tk 8.0a1 only)
 			menu.grab_release()
 
-	def treeClicked(self: "typing.Self", event):
+	def treeClicked(self, event):
 		treev = self.treev
 		if self.menu:
 			self.menu.destroy()
@@ -845,7 +847,7 @@ class FormatOptionsDialog(tix.Toplevel):
 		if col == self.valueCol:
 			self.valueCellClicked(event, optName)
 
-	def okClicked(self: "typing.Self"):
+	def okClicked(self):
 		treev = self.treev
 		for optName in self.options:
 			enable = bool(int(treev.set(optName, "#1")))
@@ -865,9 +867,9 @@ class FormatOptionsDialog(tix.Toplevel):
 
 class FormatOptionsButton(tk.Button):
 	def __init__(
-		self: "typing.Self",
+		self,
 		kind: "Literal['Read', 'Write']",
-		values: "Dict",
+		values: "dict",
 		formatInput: "FormatButton",
 		master=None,
 	) -> None:
@@ -884,10 +886,10 @@ class FormatOptionsButton(tk.Button):
 		self.values = values
 		self.formatInput = formatInput
 
-	def setOptionsValues(self: "typing.Self", values):
+	def setOptionsValues(self, values):
 		self.values = values
 
-	def buttonClicked(self: "typing.Self"):
+	def buttonClicked(self):
 		formatD = self.formatInput.get()
 		if not formatD:
 			return
@@ -900,10 +902,12 @@ class FormatOptionsButton(tk.Button):
 		# w and h are rough estimated width and height of `dialog`
 		px, py, pw, ph = decodeGeometry(self.winfo_toplevel().geometry())
 		# move dialog without changing the size
-		dialog.geometry(encodeLocation(
-			px + pw // 2 - w // 2,
-			py + ph // 2 - h // 2,
-		))
+		dialog.geometry(
+			encodeLocation(
+				px + pw // 2 - w // 2,
+				py + ph // 2 - h // 2,
+			),
+		)
 		dialog.focus()
 
 
@@ -911,13 +915,13 @@ class UI(tix.Frame, UIBase):
 	fcd_dir_save_path = join(confDir, "ui-tk-fcd-dir")
 
 	def __init__(
-		self: "typing.Self",
+		self,
 		progressbar: bool = True,
 	) -> None:
 		rootWin = self.rootWin = tix.Tk()
 		# a hack that hides the window until we move it to the center of screen
 		if os.sep == "\\":  # Windows
-			rootWin.attributes('-alpha', 0.0)
+			rootWin.attributes("-alpha", 0.0)
 		else:  # Linux
 			rootWin.withdraw()
 		tix.Frame.__init__(self, rootWin)
@@ -927,7 +931,7 @@ class UI(tix.Frame, UIBase):
 		# self.progressbarEnable = progressbar
 		########
 		set_window_icon(rootWin)
-		rootWin.bind('<Escape>', lambda e: rootWin.quit())
+		rootWin.bind("<Escape>", lambda _e: rootWin.quit())
 		#########
 		# Linux: ('clam', 'alt', 'default', 'classic')
 		# Windows: ('winnative', 'clam', 'alt', 'default', 'classic', 'vista',
@@ -939,7 +943,7 @@ class UI(tix.Frame, UIBase):
 		self.pack(fill="x")
 		# rootWin.bind("<Configure>", self.resized)
 		#######################
-		defaultFont = tkFont.nametofont('TkDefaultFont')
+		defaultFont = tkFont.nametofont("TkDefaultFont")
 		if core.sysName in ("linux", "freebsd"):
 			defaultFont.configure(size=int(defaultFont.cget("size") * 1.4))
 		####
@@ -1120,14 +1124,16 @@ class UI(tix.Frame, UIBase):
 			# activebackground="#22f022",
 			borderwidth=7,
 			font=self.biggerFont,
-			padx=5, pady=5,
+			padx=5,
+			pady=5,
 		)
 		button.grid(
 			row=row,
 			column=2,
 			columnspan=3,
 			sticky=tk.W + tk.E + tk.S,
-			padx=5, pady=5,
+			padx=5,
+			pady=5,
 		)
 		# print(f"row number for Convert button: {row}")
 		######
@@ -1155,7 +1161,8 @@ class UI(tix.Frame, UIBase):
 			column=0,
 			columnspan=4,
 			sticky=tk.W + tk.E,
-			padx=5, pady=0,
+			padx=5,
+			pady=0,
 		)
 		log.addHandler(
 			TkTextLogHandler(console),
@@ -1273,7 +1280,12 @@ class UI(tix.Frame, UIBase):
 			statusBarframe,
 			comboVar,
 			log.getVerbosity(),  # default
-			0, 1, 2, 3, 4, 5,
+			0,
+			1,
+			2,
+			3,
+			4,
+			5,
 		)
 		comboVar.trace("w", self.verbosityChanged)
 		combo.pack(side="left")
@@ -1290,16 +1302,16 @@ class UI(tix.Frame, UIBase):
 		centerWindow(rootWin)
 		# show the window
 		if os.sep == "\\":  # Windows
-			rootWin.attributes('-alpha', 1.0)
+			rootWin.attributes("-alpha", 1.0)
 		else:  # Linux
 			rootWin.deiconify()
 
-	def textSelectAll(self: "typing.Self", tktext):
+	def textSelectAll(self, tktext):
 		tktext.tag_add(tk.SEL, "1.0", tk.END)
 		tktext.mark_set(tk.INSERT, "1.0")
 		tktext.see(tk.INSERT)
 
-	def consoleKeyPress(self: "typing.Self", e):
+	def consoleKeyPress(self, e):
 		# print(e.state, e.keysym)
 		if e.state > 0:
 			if e.keysym == "c":
@@ -1311,24 +1323,24 @@ class UI(tix.Frame, UIBase):
 			return None
 		return "break"
 
-	def verbosityChanged(self: "typing.Self", index, value, op):
+	def verbosityChanged(self, _index, _value, _op):
 		log.setVerbosity(
 			int(self.verbosityCombo.get()),
 		)
 
-	def resized(self: "typing.Self", event):
-		self.rootWin.winfo_height() - self.winfo_height()
-		# log.debug(dh, self.consoleH)
-		# if dh > 20:
-		# 	self.consoleH += 1
-		# 	self.console["height"] = self.consoleH
-		# 	self.console["width"] = int(self.console["width"]) + 1
-		# 	self.console.grid()
-		# for x in dir(self):
-		# 	if "info" in x:
-		# 		log.debug(x)
+	# def resized(self, event):
+	# 	self.rootWin.winfo_height() - self.winfo_height()
+	# 	log.debug(dh, self.consoleH)
+	# 	if dh > 20:
+	# 		self.consoleH += 1
+	# 		self.console["height"] = self.consoleH
+	# 		self.console["width"] = int(self.console["width"]) + 1
+	# 		self.console.grid()
+	# 	for x in dir(self):
+	# 		if "info" in x:
+	# 			log.debug(x)
 
-	def inputFormatChanged(self: "typing.Self", *args):
+	def inputFormatChanged(self, *_args):
 		formatDesc = self.formatButtonInputConvert.get()
 		if not formatDesc:
 			return
@@ -1339,12 +1351,13 @@ class UI(tix.Frame, UIBase):
 				row=self.inputFormatRow,
 				column=3,
 				sticky=tk.W + tk.E,
-				padx=5, pady=0,
+				padx=5,
+				pady=0,
 			)
 		else:
 			self.readOptionsButton.grid_forget()
 
-	def outputFormatChanged(self: "typing.Self", *args):
+	def outputFormatChanged(self, *_args):
 		formatDesc = self.formatButtonOutputConvert.get()
 		if not formatDesc:
 			return
@@ -1361,29 +1374,30 @@ class UI(tix.Frame, UIBase):
 				row=self.outputFormatRow,
 				column=3,
 				sticky=tk.W + tk.E,
-				padx=5, pady=0,
+				padx=5,
+				pady=0,
 			)
 		else:
 			self.writeOptionsButton.grid_forget()
 
 		pathI = self.entryInputConvert.get()
 		if (
-			pathI and
-			not self.entryOutputConvert.get() and
-			self.formatButtonInputConvert.get() and
-			plugin.extensionCreate
+			pathI
+			and not self.entryOutputConvert.get()
+			and self.formatButtonInputConvert.get()
+			and plugin.extensionCreate
 		):
-			pathNoExt, ext = splitext(pathI)
+			pathNoExt, _ext = splitext(pathI)
 			self.entryOutputConvert.insert(
 				0,
 				pathNoExt + plugin.extensionCreate,
 			)
 
-	def anyEntryChanged(self: "typing.Self", event=None):
+	def anyEntryChanged(self, _event=None):
 		self.inputEntryChanged()
 		self.outputEntryChanged()
 
-	def inputEntryChanged(self: "typing.Self", event=None):
+	def inputEntryChanged(self, _event=None):
 		# char = event.keysym
 		pathI = self.entryInputConvert.get()
 		if self.pathI == pathI:
@@ -1398,14 +1412,13 @@ class UI(tix.Frame, UIBase):
 			if not formatDesc:
 				inputArgs = Glossary.detectInputFormat(pathI, quiet=True)
 				if inputArgs:
-					format = inputArgs[1]
-					plugin = Glossary.plugins.get(format)
+					plugin = Glossary.plugins.get(inputArgs.formatName)
 					if plugin:
-						self.formatButtonInputConvert.set(plugin.description)
+						self.formatButtonInputConvert.setValue(plugin.description)
 						self.inputFormatChanged()
 		self.pathI = pathI
 
-	def outputEntryChanged(self: "typing.Self", event=None):
+	def outputEntryChanged(self, _event=None):
 		pathO = self.entryOutputConvert.get()
 		if self.pathO == pathO:
 			return
@@ -1423,20 +1436,19 @@ class UI(tix.Frame, UIBase):
 					quiet=True,
 				)
 				if outputArgs:
-					outputFormat = outputArgs[1]
-					self.formatButtonOutputConvert.set(
-						Glossary.plugins[outputFormat].description,
+					self.formatButtonOutputConvert.setValue(
+						Glossary.plugins[outputArgs.formatName].description,
 					)
 					self.outputFormatChanged()
 		self.pathO = pathO
 
-	def save_fcd_dir(self: "typing.Self"):
+	def save_fcd_dir(self):
 		if not self.fcd_dir:
 			return
 		with open(self.fcd_dir_save_path, mode="w", encoding="utf-8") as fp:
 			fp.write(self.fcd_dir)
 
-	def browseInputConvert(self: "typing.Self"):
+	def browseInputConvert(self):
 		path = filedialog.askopenfilename(initialdir=self.fcd_dir)
 		if path:
 			self.entryInputConvert.delete(0, "end")
@@ -1445,7 +1457,7 @@ class UI(tix.Frame, UIBase):
 			self.fcd_dir = os.path.dirname(path)
 			self.save_fcd_dir()
 
-	def browseOutputConvert(self: "typing.Self"):
+	def browseOutputConvert(self):
 		path = filedialog.asksaveasfilename()
 		if path:
 			self.entryOutputConvert.delete(0, "end")
@@ -1454,17 +1466,15 @@ class UI(tix.Frame, UIBase):
 			self.fcd_dir = os.path.dirname(path)
 			self.save_fcd_dir()
 
-	def convert(self: "typing.Self"):
+	def convert(self):
 		inPath = self.entryInputConvert.get()
 		if not inPath:
 			log.critical("Input file path is empty!")
 			return None
 		inFormatDesc = self.formatButtonInputConvert.get()
-		if not inFormatDesc:
-			# log.critical("Input format is empty!");return
-			inFormat = ""
-		else:
-			inFormat = pluginByDesc[inFormatDesc].name
+		# if not inFormatDesc:
+		# 	log.critical("Input format is empty!");return
+		inFormat = pluginByDesc[inFormatDesc].name if inFormatDesc else ""
 
 		outPath = self.entryOutputConvert.get()
 		if not outPath:
@@ -1479,15 +1489,17 @@ class UI(tix.Frame, UIBase):
 		for attr, value in self._glossarySetAttrs.items():
 			setattr(self.glos, attr, value)
 
-		finalOutputFile = self.glos.convert(ConvertArgs(
-			inPath,
-			inputFormat=inFormat,
-			outputFilename=outPath,
-			outputFormat=outFormat,
-			readOptions=self.readOptions,
-			writeOptions=self.writeOptions,
-			**self._convertOptions,
-		))
+		finalOutputFile = self.glos.convert(
+			ConvertArgs(
+				inPath,
+				inputFormat=inFormat,
+				outputFilename=outPath,
+				outputFormat=outFormat,
+				readOptions=self.readOptions,
+				writeOptions=self.writeOptions,
+				**self._convertOptions,
+			),
+		)
 		# if finalOutputFile:
 		# 	self.status("Convert finished")
 		# else:
@@ -1495,17 +1507,17 @@ class UI(tix.Frame, UIBase):
 		return bool(finalOutputFile)
 
 	def run(
-		self: "typing.Self",
+		self,
 		inputFilename: str = "",
 		outputFilename: str = "",
 		inputFormat: str = "",
 		outputFormat: str = "",
 		reverse: bool = False,
-		config: "Dict | None" = None,
-		readOptions: "Dict | None" = None,
-		writeOptions: "Dict | None" = None,
-		convertOptions: "Dict | None" = None,
-		glossarySetAttrs: "Dict | None" = None,
+		config: "dict | None" = None,
+		readOptions: "dict | None" = None,
+		writeOptions: "dict | None" = None,
+		convertOptions: "dict | None" = None,
+		glossarySetAttrs: "dict | None" = None,
 	):
 		if glossarySetAttrs is None:
 			glossarySetAttrs = {}
@@ -1520,12 +1532,12 @@ class UI(tix.Frame, UIBase):
 			self.outputEntryChanged()
 
 		if inputFormat:
-			self.formatButtonInputConvert.set(
+			self.formatButtonInputConvert.setValue(
 				Glossary.plugins[inputFormat].description,
 			)
 			self.inputFormatChanged()
 		if outputFormat:
-			self.formatButtonOutputConvert.set(
+			self.formatButtonOutputConvert.setValue(
 				Glossary.plugins[outputFormat].description,
 			)
 			self.outputFormatChanged()
@@ -1554,19 +1566,19 @@ class UI(tix.Frame, UIBase):
 		# which is not implemented
 		self.mainloop()
 
-	def progressInit(self: "typing.Self", title):
+	def progressInit(self, title):
 		self.progressTitle = title
 
-	def progress(self: "typing.Self", rat, text=""):
+	def progress(self, ratio, text=""):
 		if not text:
-			text = "%" + str(int(rat * 100))
+			text = "%" + str(int(ratio * 100))
 		text += " - " + self.progressTitle
-		self.pbar.updateProgress(rat * 100, None, text)
-		# self.pbar.value = rat * 100
+		self.pbar.updateProgress(ratio * 100, None, text)
+		# self.pbar.value = ratio * 100
 		# self.pbar.update()
 		self.rootWin.update()
 
-	def console_clear(self: "typing.Self", event=None):
+	def console_clear(self, _event=None):
 		self.console.delete("1.0", "end")
 		self.console.insert("end", "Console:\n")
 
@@ -1582,9 +1594,7 @@ class UI(tix.Frame, UIBase):
 
 if __name__ == "__main__":
 	import sys
-	if len(sys.argv) > 1:
-		path = sys.argv[1]
-	else:
-		path = ""
-	ui = UI(path)
-	ui.run()
+
+	_path = sys.argv[1] if len(sys.argv) > 1 else ""
+	_ui = UI(_path)
+	_ui.run()

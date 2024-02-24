@@ -5,12 +5,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from typing import AnyStr, TypeAlias
 
+__all__ = ["dataToPrettyJson", "jsonToData", "jsonToOrderedData"]
+
 JsonEncodable: "TypeAlias" = "dict | list"
 # OrderedDict is also subclass of Dict, issubclass(OrderedDict, Dict) is True
 
 
 def dataToPrettyJson(
-	data: "JsonEncodable",
+	data: JsonEncodable,
 	ensure_ascii: bool = False,
 	sort_keys: bool = False,
 ) -> str:
@@ -22,7 +24,7 @@ def dataToPrettyJson(
 	)
 
 
-def jsonToData(st: "AnyStr") -> "JsonEncodable":
+def jsonToData(st: "AnyStr") -> JsonEncodable:
 	return json.loads(st)
 
 

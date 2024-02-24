@@ -20,6 +20,8 @@
 # with this program. Or on Debian systems, from /usr/share/common-licenses/GPL
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
+__all__ = ["partOfSpeechByCode"]
+
 partOfSpeechByCode = {
 	# Use None for codes we have not seen yet
 	# Use "" for codes we've seen but part of speech is unknown
@@ -44,11 +46,9 @@ partOfSpeechByCode = {
 	# "ת'"
 	# adjective
 	# (full form: "ת': תואר")
-
 	# "ש"ע"
 	# noun
 	# (full form: "ש"ע: שם עצם")
-
 	0x3D: "masculine noun and adjective",
 	0x3E: "feminine noun and adjective",
 	0x3F: "masculine and feminine noun and adjective",

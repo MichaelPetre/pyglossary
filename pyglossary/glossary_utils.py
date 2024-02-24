@@ -27,15 +27,15 @@ from .compression import (
 	stdCompressions,
 )
 
+__all__ = ["splitFilenameExt"]
+
 log = logging.getLogger("pyglossary")
 
 
 def splitFilenameExt(
 	filename: str = "",
 ) -> "tuple[str, str, str, str]":
-	"""
-	returns (filenameNoExt, filename, ext, compression)
-	"""
+	"""Return (filenameNoExt, filename, ext, compression)."""
 	compression = ""
 	filenameNoExt, ext = splitext(filename)
 	ext = ext.lower()
@@ -46,7 +46,7 @@ def splitFilenameExt(
 	if not ext:
 		return filename, filename, "", ""
 
-	if ext[1:] in stdCompressions + ("zip", "dz"):
+	if ext[1:] in (*stdCompressions, "zip", "dz"):
 		compression = ext[1:]
 		filename = filenameNoExt
 		filenameNoExt, ext = splitext(filename)

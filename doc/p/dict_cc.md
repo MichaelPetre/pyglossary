@@ -10,17 +10,15 @@
 | Extensions      |                                                                                                  |
 | Read support    | Yes                                                                                              |
 | Write support   | No                                                                                               |
-| Single-file     | No                                                                                               |
+| Single-file     | Yes                                                                                              |
 | Kind            | 🔢 binary                                                                                         |
 | Sort-on-write   | default_no                                                                                       |
 | Sort key        | (`headword_lower`)                                                                               |
 | Wiki            | [Dict.cc](https://en.wikipedia.org/wiki/Dict.cc)                                                 |
 | Website         | [dict.cc dictionary - Google Play](https://play.google.com/store/apps/details?id=cc.dict.dictcc) |
 
-
-
 ### Dictionary Applications/Tools
 
-| Name & Website                                                                     | Source code | License     | Platforms |
-| ---------------------------------------------------------------------------------- | ----------- | ----------- | --------- |
-| [dict.cc dictionary](https://play.google.com/store/apps/details?id=cc.dict.dictcc) | ―           | Proprietary | Android   |
+| Name & Website                                                                     | Source code | License     | Platforms | Language |
+| ---------------------------------------------------------------------------------- | ----------- | ----------- | --------- | -------- |
+| [dict.cc dictionary](https://play.google.com/store/apps/details?id=cc.dict.dictcc) | ―           | Proprietary | Android   |          |

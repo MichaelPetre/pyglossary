@@ -21,7 +21,30 @@ import logging
 import re
 import struct
 import sys
-from typing import AnyStr, Callable
+from collections.abc import Callable
+from typing import AnyStr
+
+__all__ = [
+	"crc32hex",
+	"escapeNTB",
+	"excMessage",
+	"fixUtf8",
+	"isASCII",
+	"joinByBar",
+	"replacePostSpaceChar",
+	"replaceStringTable",
+	"splitByBar",
+	"splitByBarUnescapeNTB",
+	"toBytes",
+	"toStr",
+	"uint32FromBytes",
+	"uint32ToBytes",
+	"uint64FromBytes",
+	"uint64ToBytes",
+	"uintFromBytes",
+	"unescapeNTB",
+	"urlToPath",
+]
 
 log = logging.getLogger("pyglossary")
 
@@ -48,7 +71,6 @@ pattern_n_us = re.compile(r"((?<!\\)(?:\\\\)*)\\n")
 pattern_t_us = re.compile(r"((?<!\\)(?:\\\\)*)\\t")
 pattern_bar_us = re.compile(r"((?<!\\)(?:\\\\)*)\\\|")
 pattern_bar_sp = re.compile(r"(?:(?<!\\)(?:\\\\)*)\|")
-b_pattern_bar_us = re.compile(r"((?<!\\)(?:\\\\)*)\\\|".encode("ascii"))
 
 
 def replaceStringTable(
@@ -58,13 +80,12 @@ def replaceStringTable(
 		for rpl in rplList:
 			st = st.replace(rpl[0], rpl[1])
 		return st
+
 	return replace
 
 
 def escapeNTB(st: str, bar: bool = False) -> str:
-	"""
-		scapes Newline, Tab, Baskslash, and vertical Bar (if bar=True)
-	"""
+	"""Scapes Newline, Tab, Baskslash, and vertical Bar (if bar=True)."""
 	st = st.replace("\\", "\\\\")
 	st = st.replace("\t", r"\t")
 	st = st.replace("\r", "")
@@ -75,9 +96,7 @@ def escapeNTB(st: str, bar: bool = False) -> str:
 
 
 def unescapeNTB(st: str, bar: bool = False) -> str:
-	"""
-		unscapes Newline, Tab, Baskslash, and vertical Bar (if bar=True)
-	"""
+	"""Unscapes Newline, Tab, Baskslash, and vertical Bar (if bar=True)."""
 	st = pattern_n_us.sub("\\1\n", st)
 	st = pattern_t_us.sub("\\1\t", st)
 	if bar:
@@ -87,56 +106,35 @@ def unescapeNTB(st: str, bar: bool = False) -> str:
 
 
 def splitByBarUnescapeNTB(st: str) -> "list[str]":
+	r"""
+	Split by "|" (and not "\\|") then unescapes Newline (\\n),
+	Tab (\\t), Baskslash (\\) and Bar (\\|) in each part
+	returns a list.
 	"""
-		splits by "|" (and not "\\|") then unescapes Newline (\\n),
-			Tab (\\t), Baskslash (\\) and Bar (\\|) in each part
-		returns a list
-	"""
-	return [
-		unescapeNTB(part, bar=True)
-		for part in pattern_bar_sp.split(st)
-	]
+	return [unescapeNTB(part, bar=True) for part in pattern_bar_sp.split(st)]
 
 
 def escapeBar(st: str) -> str:
-	r"""
-		scapes vertical bar (\|)
-	"""
+	r"""Scapes vertical bar (\|)."""
 	return st.replace("\\", "\\\\").replace("|", r"\|")
 
 
 def unescapeBar(st: str) -> str:
-	r"""
-		unscapes vertical bar (\|)
-	"""
+	r"""Unscapes vertical bar (\|)."""
 	# str.replace is probably faster than re.sub
 	return pattern_bar_us.sub(r"\1|", st).replace("\\\\", "\\")
 
 
 def splitByBar(st: str) -> "list[str]":
+	r"""
+	Split by "|" (and not "\\|")
+	then unescapes Baskslash (\\) and Bar (\\|) in each part.
 	"""
-		splits by "|" (and not "\\|")
-		then unescapes Baskslash (\\) and Bar (\\|) in each part
-	"""
-	return [
-		unescapeBar(part)
-		for part in pattern_bar_sp.split(st)
-	]
+	return [unescapeBar(part) for part in pattern_bar_sp.split(st)]
 
 
 def joinByBar(parts: "list[str]") -> "str":
-	return "|".join([
-		escapeBar(part)
-		for part in parts
-	])
-
-
-def unescapeBarBytes(st: bytes) -> bytes:
-	r"""
-		unscapes vertical bar (\|)
-	"""
-	# str.replace is probably faster than re.sub
-	return b_pattern_bar_us.sub(b"\\1|", st).replace(b"\\\\", b"\\")
+	return "|".join(escapeBar(part) for part in parts)
 
 
 # return a message string describing the current exception
@@ -147,31 +145,23 @@ def excMessage() -> str:
 	return f"{i[0].__name__}: {i[1]}"
 
 
-def formatHMS(h: int, m: int, s: int) -> str:
-	if h == 0:
-		if m == 0:
-			return f"{s:02d}"
-		return f"{m:02d}:{s:02d}"
-	return f"{h:02d}:{m:02d}:{s:02d}"
-
-
 # ___________________________________________ #
 
 
 def uint32ToBytes(n: int) -> bytes:
-	return struct.pack('>I', n)
+	return struct.pack(">I", n)
 
 
 def uint64ToBytes(n: int) -> bytes:
-	return struct.pack('>Q', n)
+	return struct.pack(">Q", n)
 
 
 def uint32FromBytes(bs: bytes) -> int:
-	return struct.unpack('>I', bs)[0]
+	return struct.unpack(">I", bs)[0]
 
 
 def uint64FromBytes(bs: bytes) -> int:
-	return struct.unpack('>Q', bs)[0]
+	return struct.unpack(">Q", bs)[0]
 
 
 def uintFromBytes(bs: bytes) -> int:
@@ -182,13 +172,15 @@ def uintFromBytes(bs: bytes) -> int:
 
 
 def crc32hex(bs: bytes) -> str:
-	return struct.pack('>I', binascii.crc32(bs) & 0xffffffff).hex()
+	return struct.pack(">I", binascii.crc32(bs) & 0xFFFFFFFF).hex()
+
 
 # ___________________________________________ #
 
 
 def urlToPath(url: str) -> str:
 	from urllib.parse import unquote
+
 	if not url.startswith("file://"):
 		return unquote(url)
 	path = url[7:]

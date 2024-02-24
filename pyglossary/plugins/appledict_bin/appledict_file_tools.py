@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import io
-from struct import unpack
-
 # Copyright © 2023 soshial <soshial@gmail.com> (soshial)
 #
 # This program is a free software; you can redistribute it and/or modify
@@ -17,18 +14,26 @@ from struct import unpack
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
+from struct import unpack
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	import io
+
+__all__ = [
+	"APPLEDICT_FILE_OFFSET",
+	"guessFileOffsetLimit",
+	"readInt",
+	"read_2_bytes_here",
+	"read_x_bytes_as_word",
+]
+
 
 APPLEDICT_FILE_OFFSET = 0x40
 # addressing of AppleDict binary files always ignores first 0x40 bytes
 
-
-def readIntAt(buffer: "io.BufferedIOBase", address: int) -> int:
-	buffer.seek(address)
-	return unpack('i', buffer.read(4))[0]
-
-
 def readIntPair(buffer: "io.BufferedIOBase") -> "tuple[int, int]":
-	# to statisfy mymy, put them in vars with declared type
+	# to satisfy mymy, put them in vars with declared type
 	a: int
 	b: int
 	a, b = unpack("ii", buffer.read(8))
@@ -36,20 +41,11 @@ def readIntPair(buffer: "io.BufferedIOBase") -> "tuple[int, int]":
 
 
 def readInt(buffer: "io.BufferedIOBase") -> int:
-	return unpack('i', buffer.read(4))[0]
+	return unpack("i", buffer.read(4))[0]
 
 
 def read_x_bytes_as_word(buffer: "io.BufferedIOBase", x: int) -> str:
-	word = ''
-	while x > 0:
-		word += chr(read_2_bytes_here(buffer))
-		x -= 2
-	return word
-
-
-def read_2_bytes(buffer: "io.BufferedIOBase", address: int) -> int:
-	buffer.seek(address)
-	return read_2_bytes_here(buffer)
+	return buffer.read(x).decode("UTF-16LE")
 
 
 def read_2_bytes_here(buffer: "io.BufferedIOBase") -> int:
@@ -59,7 +55,7 @@ def read_2_bytes_here(buffer: "io.BufferedIOBase") -> int:
 
 
 def guessFileOffsetLimit(file: "io.BufferedIOBase") -> "tuple[int, int]":
-	"""returns address offset to start parsing from and EOF address"""
+	"""Returns address offset to start parsing from and EOF address."""
 	file.seek(APPLEDICT_FILE_OFFSET)
 	limit = readInt(file)
 	intPair = readIntPair(file)

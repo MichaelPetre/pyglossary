@@ -10,17 +10,15 @@
 | Extensions      |                                                                                                                        |
 | Read support    | Yes                                                                                                                    |
 | Write support   | No                                                                                                                     |
-| Single-file     | No                                                                                                                     |
+| Single-file     | Yes                                                                                                                    |
 | Kind            | 🔢 binary                                                                                                               |
 | Sort-on-write   | default_no                                                                                                             |
 | Sort key        | (`headword_lower`)                                                                                                     |
 | Wiki            | ―                                                                                                                      |
 | Website         | [ABC Medical Notes 2021 - Google Play](https://play.google.com/store/apps/details?id=com.pocketmednotes2014.secondapp) |
 
-
-
 ### Dictionary Applications/Tools
 
-| Name & Website                                                                                           | Source code | License | Platforms |
-| -------------------------------------------------------------------------------------------------------- | ----------- | ------- | --------- |
-| [ABC Medical Notes 2020](https://play.google.com/store/apps/details?id=com.pocketmednotes2014.secondapp) | ―           | Unknown | Android   |
+| Name & Website                                                                                           | Source code | License | Platforms | Language |
+| -------------------------------------------------------------------------------------------------------- | ----------- | ------- | --------- | -------- |
+| [ABC Medical Notes 2020](https://play.google.com/store/apps/details?id=com.pocketmednotes2014.secondapp) | ―           | Unknown | Android   |          |

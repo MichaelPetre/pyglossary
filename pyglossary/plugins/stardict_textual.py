@@ -1,17 +1,14 @@
-
-import typing
-
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
 	import io
-	from typing import Generator, Iterator
+	from collections.abc import Generator, Iterator
 
 	from lxml import builder
-	from lxml.etree import _Element as Element
 
-	from pyglossary.xdxf_transform import XdxfTransformer
+	from pyglossary.lxml_types import Element
+	from pyglossary.xdxf.transform import XdxfTransformer
 
 
 from pyglossary.compression import (
@@ -21,11 +18,28 @@ from pyglossary.compression import (
 from pyglossary.core import log, pip
 from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.html_utils import unescape_unicode
+from pyglossary.io_utils import nullBinaryIO
 from pyglossary.option import (
 	BoolOption,
 	EncodingOption,
 	Option,
 )
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+	"Writer",
+]
 
 enable = True
 lname = "stardict_textual"
@@ -50,7 +64,7 @@ optionsProp: "dict[str, Option]" = {
 }
 
 
-class Reader(object):
+class Reader:
 	_encoding: str = "utf-8"
 	_xdxf_to_html: bool = True
 
@@ -59,35 +73,35 @@ class Reader(object):
 		"lxml": "lxml",
 	}
 
-	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._filename = ""
-		self._file: "io.IOBase | None" = None
+		self._file: "io.IOBase" = nullBinaryIO
 		self._fileSize = 0
 		self._xdxfTr: "XdxfTransformer | None" = None
 
-	def xdxf_setup(self: "typing.Self") -> "XdxfTransformer":
-		from pyglossary.xdxf_transform import XdxfTransformer
+	def xdxf_setup(self) -> "XdxfTransformer":
+		from pyglossary.xdxf.transform import XdxfTransformer
+
 		self._xdxfTr = tr = XdxfTransformer(encoding="utf-8")
 		return tr
 
-	def xdxf_transform(self: "typing.Self", text: str) -> str:
+	def xdxf_transform(self, text: str) -> str:
 		tr = self._xdxfTr
 		if tr is None:
 			tr = self.xdxf_setup()
 		return tr.transformByInnerString(text)
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return 0
 
-	def close(self: "typing.Self") -> None:
-		if self._file:
-			self._file.close()
-			self._file = None
+	def close(self) -> None:
+		self._file.close()
+		self._file = nullBinaryIO
 		self._filename = ""
 		self._fileSize = 0
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		try:
 			from lxml import etree as ET
 		except ModuleNotFoundError as e:
@@ -111,17 +125,17 @@ class Reader(object):
 			tag="info",
 		)
 		for _, elem in context:
-			self.setMetadata(elem)
+			self.setMetadata(elem)  # type: ignore
 			break
 
 		cfile.close()
 
-	def setGlosInfo(self: "typing.Self", key: str, value: str) -> None:
+	def setGlosInfo(self, key: str, value: str) -> None:
 		if value is None:
 			return
 		self._glos.setInfo(key, unescape_unicode(value))
 
-	def setMetadata(self: "typing.Self", header: "Element") -> None:
+	def setMetadata(self, header: "Element") -> None:
 		if (elem := header.find("./bookname")) is not None and elem.text:
 			self.setGlosInfo("name", elem.text)
 
@@ -150,13 +164,13 @@ class Reader(object):
 		# 	self.setGlosInfo("dicttype", elem.text)
 
 	def renderDefiList(
-		self: "typing.Self",
+		self,
 		defisWithFormat: "list[tuple[str, str]]",
 	) -> "tuple[str, str]":
+		if not defisWithFormat:
+			return "", ""
 		if len(defisWithFormat) == 1:
 			return defisWithFormat[0]
-		if len(defisWithFormat) == 0:
-			return "", ""
 
 		defiFormatSet = set()
 		for _, _type in defisWithFormat:
@@ -180,7 +194,7 @@ class Reader(object):
 			defis.append(_defi)
 		return "\n<hr>\n".join(defis), "h"
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType]":
 		from lxml import etree as ET
 
 		glos = self._glos
@@ -191,7 +205,8 @@ class Reader(object):
 			events=("end",),
 			tag="article",
 		)
-		for _, elem in context:
+		for _, _elem in context:
+			elem = cast("Element", _elem)
 			words = []
 			defisWithFormat = []
 			for child in elem.getchildren():
@@ -236,10 +251,13 @@ class Reader(object):
 			# clean up preceding siblings to save memory
 			# this can reduce memory usage from >300 MB to ~25 MB
 			while elem.getprevious() is not None:
-				del elem.getparent()[0]
+				parent = elem.getparent()
+				if parent is None:
+					break
+				del parent[0]
 
 
-class Writer(object):
+class Writer:
 	_encoding: str = "utf-8"
 
 	compressions = stdCompressions
@@ -247,12 +265,12 @@ class Writer(object):
 		"lxml": "lxml",
 	}
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
 
 	def open(
-		self: "typing.Self",
+		self,
 		filename: str,
 	) -> None:
 		self._filename = filename
@@ -262,11 +280,11 @@ class Writer(object):
 			encoding=self._encoding,
 		)
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		self._file.close()
 
 	def writeInfo(
-		self: "typing.Self",
+		self,
 		maker: "builder.ElementMaker",
 		pretty: bool,
 	) -> None:
@@ -275,9 +293,9 @@ class Writer(object):
 		glos = self._glos
 
 		desc = glos.getInfo("description")
-		copyright = glos.getInfo("copyright")
-		if copyright:
-			desc = f"{copyright}\n{desc}"
+		_copyright = glos.getInfo("copyright")
+		if _copyright:
+			desc = f"{_copyright}\n{desc}"
 		publisher = glos.getInfo("publisher")
 		if publisher:
 			desc = f"Publisher: {publisher}\n{desc}"
@@ -293,16 +311,20 @@ class Writer(object):
 			maker.dicttype(""),
 		)
 		_file = self._file
-		if _file is None:
-			raise RuntimeError("_file is None")
-		_file.write(cast(bytes, ET.tostring(
-			info,
-			encoding=self._encoding,
-			pretty_print=pretty,
-		)).decode(self._encoding) + "\n")
+		_file.write(
+			cast(
+				bytes,
+				ET.tostring(
+					info,
+					encoding=self._encoding,
+					pretty_print=pretty,
+				),
+			).decode(self._encoding)
+			+ "\n",
+		)
 
 	def writeDataEntry(
-		self: "typing.Self",
+		self,
 		maker: "builder.ElementMaker",
 		entry: "EntryType",
 	) -> None:
@@ -317,7 +339,7 @@ class Writer(object):
 		# 	)
 		# )
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		from lxml import builder
 		from lxml import etree as ET
 
@@ -325,9 +347,11 @@ class Writer(object):
 		encoding = self._encoding
 		maker = builder.ElementMaker()
 
-		_file.write("""<?xml version="1.0" encoding="UTF-8" ?>
+		_file.write(
+			"""<?xml version="1.0" encoding="UTF-8" ?>
 <stardict xmlns:xi="http://www.w3.org/2003/XInclude">
-""")
+""",
+		)
 
 		self.writeInfo(maker, pretty=True)
 
@@ -345,17 +369,22 @@ class Writer(object):
 			)
 			for alt in entry.l_word[1:]:
 				article.append(maker.synonym(alt))
-			article.append(maker.definition(
-				ET.CDATA(entry.defi),
-				type=entry.defiFormat,
-			))
+			article.append(
+				maker.definition(
+					ET.CDATA(entry.defi),
+					type=entry.defiFormat,
+				),
+			)
 			ET.indent(article, space="")
-			articleStr = cast(bytes, ET.tostring(
-				article,
-				pretty_print=pretty,
-				encoding=encoding,
-			)).decode(encoding)
-			# for some reason, "´k" becomes " ́k" (for example)
+			articleStr = cast(
+				bytes,
+				ET.tostring(
+					article,
+					pretty_print=pretty,
+					encoding=encoding,
+				),
+			).decode(encoding)
+			# for some reason, "´k" becomes " ́k" (for example) # noqa: RUF003
 			# stardict-text2bin tool also does this.
 			# https://en.wiktionary.org/wiki/%CB%88#Translingual
 			self._file.write(articleStr + "\n")

@@ -1,12 +1,24 @@
-
-import typing
-
 # -*- coding: utf-8 -*-
-from typing import Generator
+from collections.abc import Generator
 
 from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.option import BoolOption, Option
 from pyglossary.text_utils import replaceStringTable
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
 
 enable = True
 lname = "dict_org_source"
@@ -26,31 +38,34 @@ optionsProp: "dict[str, Option]" = {
 }
 
 
-class Writer(object):
+class Writer:
 	_remove_html_all: bool = True
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
+		self._filename = ""
 
-	def finish(self: "typing.Self") -> None:
-		self._filename = None
+	def finish(self) -> None:
+		self._filename = ""
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		self._filename = filename
 		if self._remove_html_all:
 			self._glos.removeHtmlTagsAll()
 		# TODO: add another bool flag to only remove html tags that are not
 		# supported by GtkTextView
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		from pyglossary.text_writer import writeTxt
+
 		yield from writeTxt(
 			self._glos,
 			entryFmt=":{word}:{defi}\n",
 			filename=self._filename,
-			defiEscapeFunc=replaceStringTable([
-				("\r", ""),
-			]),
+			defiEscapeFunc=replaceStringTable(
+				[
+					("\r", ""),
+				],
+			),
 			ext=".dtxt",
 		)

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 #
 # Copyright © 2012-2022 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 # This file is part of PyGlossary project, https://github.com/ilius/pyglossary
@@ -18,7 +19,6 @@
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
 import logging
-import typing
 from collections import OrderedDict
 from os.path import isfile, join
 
@@ -36,7 +36,8 @@ from pyglossary.option import (
 	Option,
 	StrOption,
 )
-from pyglossary.ui_type import UIType
+
+__all__ = ["UIBase", "aboutText", "authors", "fread", "licenseText", "logo"]
 
 
 def fread(path: str) -> str:
@@ -77,123 +78,153 @@ def getEntryFilterConfigPair(name: str) -> "tuple[str, Option]":
 	)
 
 
-class UIBase(UIType):
-	configDefDict = OrderedDict([
-		("log_time", BoolOption(
-			hasFlag=True,
-			comment="Show date and time in logs",
-			falseComment="Do not show date and time in logs",
-		)),
-		("cleanup", BoolOption(
-			hasFlag=True,
-			comment="Cleanup cache or temporary files after conversion",
-			falseComment="Do not cleanup cache or temporary files after conversion",
-		)),
-
-		("auto_sqlite", BoolOption(
-			hasFlag=False,
-			comment=(
-				"Auto-enable --sqlite to limit RAM usage when direct\n"
-				"mode is not possible. Can override with --no-sqlite"
+class UIBase:
+	configDefDict = OrderedDict(
+		[
+			(
+				"log_time",
+				BoolOption(
+					hasFlag=True,
+					comment="Show date and time in logs",
+					falseComment="Do not show date and time in logs",
+				),
 			),
-		)),
-		("optimize_memory", BoolOption(
-			hasFlag=True,
-			comment=(
-				"Optimize memory usage (over speed) in --indirect mode"
+			(
+				"cleanup",
+				BoolOption(
+					hasFlag=True,
+					comment="Cleanup cache or temporary files after conversion",
+					falseComment=(
+						"Do not cleanup cache or temporary files after conversion",
+					),
+				),
 			),
-		)),
-
-		("enable_alts", BoolOption(
-			hasFlag=True,
-			customFlag="alts",
-			comment="Enable alternates",
-			falseComment="Disable alternates",
-		)),
-		# FIXME: replace with "resources"
-		# 	comment="Use resources (images, audio, etc)"
-		("skip_resources", BoolOption(
-			hasFlag=True,
-			comment="Skip resources (images, audio, css, etc)",
-		)),
-		("save_info_json", BoolOption(
-			hasFlag=True,
-			customFlag="info",
-			comment="Save .info file alongside output file(s)",
-		)),
-
-		getEntryFilterConfigPair("lower"),
-		getEntryFilterConfigPair("utf8_check"),
-		getEntryFilterConfigPair("rtl"),
-		getEntryFilterConfigPair("remove_html"),
-		getEntryFilterConfigPair("remove_html_all"),
-		getEntryFilterConfigPair("normalize_html"),
-		getEntryFilterConfigPair("skip_duplicate_headword"),
-		getEntryFilterConfigPair("trim_arabic_diacritics"),
-
-		("color.enable.cmd.unix", BoolOption(
-			hasFlag=False,
-			comment="Enable colors in Linux/Unix command line",
-		)),
-		("color.enable.cmd.windows", BoolOption(
-			hasFlag=False,
-			comment="Enable colors in Windows command line",
-		)),
-
-		("color.cmd.critical", IntOption(
-			hasFlag=False,
-			comment="Color code for critical errors in command line",
-		)),
-		("color.cmd.error", IntOption(
-			hasFlag=False,
-			comment="Color code for errors in command line",
-		)),
-		("color.cmd.warning", IntOption(
-			hasFlag=False,
-			comment="Color code for warnings in command line",
-		)),
-
-
-		# interactive command line interface
-		("cmdi.prompt.indent.str", StrOption(hasFlag=False)),
-		("cmdi.prompt.indent.color", IntOption(hasFlag=False)),
-		("cmdi.prompt.msg.color", IntOption(hasFlag=False)),
-		("cmdi.msg.color", IntOption(hasFlag=False)),
-
-
-		("ui_autoSetFormat", BoolOption(hasFlag=False)),
-
-		("reverse_matchWord", BoolOption(hasFlag=False)),
-		("reverse_showRel", StrOption(hasFlag=False)),
-		("reverse_saveStep", IntOption(hasFlag=False)),
-		("reverse_minRel", FloatOption(hasFlag=False)),
-		("reverse_maxNum", IntOption(hasFlag=False)),
-		("reverse_includeDefs", BoolOption(hasFlag=False)),
-	])
+			(
+				"auto_sqlite",
+				BoolOption(
+					hasFlag=False,
+					comment=(
+						"Auto-enable --sqlite to limit RAM usage when direct\n"
+						"mode is not possible. Can override with --no-sqlite"
+					),
+				),
+			),
+			(
+				"optimize_memory",
+				BoolOption(
+					hasFlag=True,
+					comment=("Optimize memory usage (over speed) in --indirect mode"),
+				),
+			),
+			(
+				"enable_alts",
+				BoolOption(
+					hasFlag=True,
+					customFlag="alts",
+					comment="Enable alternates",
+					falseComment="Disable alternates",
+				),
+			),
+			# FIXME: replace with "resources"
+			# 	comment="Use resources (images, audio, etc)"
+			(
+				"skip_resources",
+				BoolOption(
+					hasFlag=True,
+					comment="Skip resources (images, audio, css, etc)",
+				),
+			),
+			(
+				"save_info_json",
+				BoolOption(
+					hasFlag=True,
+					customFlag="info",
+					comment="Save .info file alongside output file(s)",
+				),
+			),
+			getEntryFilterConfigPair("lower"),
+			getEntryFilterConfigPair("utf8_check"),
+			getEntryFilterConfigPair("rtl"),
+			getEntryFilterConfigPair("remove_html"),
+			getEntryFilterConfigPair("remove_html_all"),
+			getEntryFilterConfigPair("normalize_html"),
+			getEntryFilterConfigPair("skip_duplicate_headword"),
+			getEntryFilterConfigPair("trim_arabic_diacritics"),
+			getEntryFilterConfigPair("unescape_word_links"),
+			(
+				"color.enable.cmd.unix",
+				BoolOption(
+					hasFlag=False,
+					comment="Enable colors in Linux/Unix command line",
+				),
+			),
+			(
+				"color.enable.cmd.windows",
+				BoolOption(
+					hasFlag=False,
+					comment="Enable colors in Windows command line",
+				),
+			),
+			(
+				"color.cmd.critical",
+				IntOption(
+					hasFlag=False,
+					comment="Color code for critical errors in command line",
+				),
+			),
+			(
+				"color.cmd.error",
+				IntOption(
+					hasFlag=False,
+					comment="Color code for errors in command line",
+				),
+			),
+			(
+				"color.cmd.warning",
+				IntOption(
+					hasFlag=False,
+					comment="Color code for warnings in command line",
+				),
+			),
+			# interactive command line interface
+			("cmdi.prompt.indent.str", StrOption(hasFlag=False)),
+			("cmdi.prompt.indent.color", IntOption(hasFlag=False)),
+			("cmdi.prompt.msg.color", IntOption(hasFlag=False)),
+			("cmdi.msg.color", IntOption(hasFlag=False)),
+			("ui_autoSetFormat", BoolOption(hasFlag=False)),
+			("reverse_matchWord", BoolOption(hasFlag=False)),
+			("reverse_showRel", StrOption(hasFlag=False)),
+			("reverse_saveStep", IntOption(hasFlag=False)),
+			("reverse_minRel", FloatOption(hasFlag=False)),
+			("reverse_maxNum", IntOption(hasFlag=False)),
+			("reverse_includeDefs", BoolOption(hasFlag=False)),
+		],
+	)
 
 	conflictingParams = [
 		("sqlite", "direct"),
 		("remove_html", "remove_html_all"),
 	]
 
-	def __init__(self: "typing.Self", **kwargs) -> None:
+	def __init__(self, **_kwargs) -> None:
 		self.config = {}
 
-	def progressInit(self: "typing.Self", title: str) -> None:
+	def progressInit(self, title: str) -> None:
 		pass
 
-	def progress(self: "typing.Self", rat: float, text: str = "") -> None:
+	def progress(self, ratio: float, text: str = "") -> None:
 		pass
 
-	def progressEnd(self: "typing.Self") -> None:
+	def progressEnd(self) -> None:
 		self.progress(1.0)
 
 	def loadConfig(
-		self: "typing.Self",
+		self,
 		user: bool = True,
 		**options,
 	) -> None:
 		from pyglossary.json_utils import jsonToData
+
 		data = jsonToData(fread(rootConfJsonFile))
 		if user and isfile(confJsonFile):
 			try:
@@ -208,7 +239,7 @@ class UIBase(UIType):
 		for key in self.configDefDict:
 			try:
 				self.config[key] = data.pop(key)
-			except KeyError:
+			except KeyError:  # noqa: PERF203
 				pass
 		for key in data:
 			log.warning(
@@ -224,8 +255,9 @@ class UIBase(UIType):
 
 		log.debug(f"loaded config: {self.config}")
 
-	def saveConfig(self: "typing.Self") -> None:
+	def saveConfig(self) -> None:
 		from pyglossary.json_utils import dataToPrettyJson
+
 		config = OrderedDict()
 		for key, option in self.configDefDict.items():
 			if key not in self.config:
@@ -237,6 +269,6 @@ class UIBase(UIType):
 				continue
 			config[key] = value
 		jsonStr = dataToPrettyJson(config)
-		with open(confJsonFile, mode="wt", encoding="utf-8") as _file:
+		with open(confJsonFile, mode="w", encoding="utf-8") as _file:
 			_file.write(jsonStr)
 		log.info(f"saved {confJsonFile!r}")

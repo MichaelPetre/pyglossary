@@ -4,9 +4,10 @@ import html
 import os
 import re
 import time
-import typing
+from collections.abc import Generator
+from functools import lru_cache
 from os.path import isdir, isfile, join
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 	import io
@@ -27,6 +28,21 @@ from pyglossary.text_utils import (
 	escapeNTB,
 	unescapeNTB,
 )
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
 
 enable = True
 lname = "html_dir"
@@ -84,11 +100,7 @@ h6 {{ font-size: 1.0em;}}
 """
 
 
-class Writer(object):
-	depends = {
-		"cachetools": "cachetools",
-	}
-
+class Writer:
 	_encoding: str = "utf-8"
 	_resources: bool = True
 	_max_file_size: int = 102400
@@ -98,10 +110,10 @@ class Writer(object):
 	_css: str = ""
 	_word_title: bool = True
 
-	def stripFullHtmlError(self: "typing.Self", entry: "EntryType", error: str) -> None:
+	def stripFullHtmlError(self, entry: "EntryType", error: str) -> None:
 		log.error(f"error in stripFullHtml: {error}, words={entry.l_word!r}")
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
 		self._fileObj: "io.IOBase | None" = None
@@ -111,9 +123,9 @@ class Writer(object):
 		self._filenameList: "list[str]" = []
 		glos.stripFullHtml(errorHandler=self.stripFullHtmlError)
 
-	def open(self: "typing.Self", filename: str) -> None:
-		from cachetools import LRUCache  # noqa: F401
+		self._resSrcPattern = re.compile(' src="([^"]*)"')
 
+	def open(self, filename: str) -> None:
 		self._filename = filename
 		self._resDir = resDir = join(filename, "res")
 		if not isdir(filename):
@@ -123,19 +135,20 @@ class Writer(object):
 		if self._css:
 			self.copyCSS(self._css)
 
-	def copyCSS(self: "typing.Self", cssPath: str) -> None:
+	def copyCSS(self, cssPath: str) -> None:
 		import shutil
-		shutil.copy(self._css, join(self._filename, "style.css"))
 
-	def finish(self: "typing.Self") -> None:
+		shutil.copy(cssPath, join(self._filename, "style.css"))
+
+	def finish(self) -> None:
 		pass
 
-	def getNextFilename(self: "typing.Self") -> str:
+	def getNextFilename(self) -> str:
 		return self._filename_format.format(
 			n=len(self._filenameList),
 		)
 
-	def nextFile(self: "typing.Self") -> "io.TextIOBase":
+	def nextFile(self) -> "io.TextIOBase":
 		if self._fileObj:
 			self._fileObj.write(self._tail)
 			self._fileObj.close()
@@ -151,10 +164,8 @@ class Writer(object):
 		)
 		return self._fileObj
 
-	def fixLinks(self: "typing.Self", linkTargetSet: "set[str]") -> None:
+	def fixLinks(self, linkTargetSet: "set[str]") -> None:
 		import gc
-
-		from cachetools import LRUCache
 
 		gc.collect()
 		dirn = self._filename
@@ -173,28 +184,20 @@ class Writer(object):
 			if word not in linkTargetSet:
 				continue
 			if word in fileByWord:
-				# log.info(f'fileByWord[{word}]={fileByWord[word]}, filename={filename}')
 				fileByWord[word].append((filename, entryIndex))
 			else:
 				fileByWord[word] = [(filename, entryIndex)]
 
-		linksByFile: "LRUCache" = LRUCache(maxsize=100)
-
 		# with open(join(dirn, "fileByWord.json"), "w") as fileByWordFile:
 		# 	json.dump(fileByWord, fileByWordFile, ensure_ascii=False, indent="\t")
 
+		@lru_cache(maxsize=10)
 		def getLinksByFile(fileIndex: int) -> "io.TextIOBase":
-			nonlocal linksByFile
-			_file = linksByFile.get(fileIndex)
-			if _file is not None:
-				return _file
-			_file = open(
+			return open(
 				join(dirn, f"links{fileIndex}"),
 				mode="a",
 				encoding="utf-8",
 			)
-			linksByFile[fileIndex] = _file
-			return _file
 
 		log.info("")
 		for line in open(join(dirn, "links.txt"), encoding="utf-8"):
@@ -216,10 +219,6 @@ class Writer(object):
 			)
 			_file.flush()
 
-		for _, _file in linksByFile.items():
-			_file.close()
-		del linksByFile
-
 		linkTargetSet.clear()
 		del fileByWord, linkTargetSet
 		gc.collect()
@@ -231,7 +230,7 @@ class Writer(object):
 
 		re_href = re.compile(
 			b' href="[^<>"]*?"',
-			re.I,
+			re.IGNORECASE,
 		)
 
 		for fileIndex, filename in enumerate(filenameList):
@@ -243,35 +242,41 @@ class Writer(object):
 						outFile.flush()
 						linkLine = linkLine.rstrip(b"\n")
 						b_x_start, b_x_size, b_target = linkLine.split(b"\t")
-						outFile.write(inFile.read(
-							int(b_x_start, 16) - inFile.tell(),
-						))
+						outFile.write(
+							inFile.read(
+								int(b_x_start, 16) - inFile.tell(),
+							),
+						)
 						curLink = inFile.read(int(b_x_size, 16))
 
 						if b_target:
-							outFile.write(re_href.sub(
-								b' href="./' + b_target + b'"',
-								curLink,
-							))
+							outFile.write(
+								re_href.sub(
+									b' href="./' + b_target + b'"',
+									curLink,
+								),
+							)
 							continue
 
 						if not entry_url_fmt:
-							outFile.write(curLink.replace(
-								b' href="#',
-								b' class="broken" href="#',
-							))
+							outFile.write(
+								curLink.replace(
+									b' href="#',
+									b' class="broken" href="#',
+								),
+							)
 							continue
 
 						_st = curLink.decode("utf-8")
 						i = _st.find('href="#')
 						j = _st.find('"', i + 7)
-						word = _st[i + 7:j]
+						word = _st[i + 7 : j]
 						url = entry_url_fmt.format(word=word)
-						outFile.write((
-							_st[:i] +
-							f'class="broken" href="{url}"' +
-							_st[j + 1:]
-						).encode("utf-8"))
+						outFile.write(
+							(
+								_st[:i] + f'class="broken" href="{url}"' + _st[j + 1 :]
+							).encode("utf-8"),
+						)
 
 					outFile.write(inFile.read())
 
@@ -279,12 +284,12 @@ class Writer(object):
 			os.rename(join(dirn, f"{filename}.new"), join(dirn, filename))
 			os.remove(join(dirn, f"links{fileIndex}"))
 
-	def writeInfo(self: "typing.Self", filename: str, header: str) -> None:
+	def writeInfo(self, filename: str, header: str) -> None:
 		glos = self._glos
 		title = glos.getInfo("name")
 		customStyle = (
-			'table, th, td {border: 1px solid black; '
-			'border-collapse: collapse; padding: 5px;}'
+			"table, th, td {border: 1px solid black; "
+			"border-collapse: collapse; padding: 5px;}"
 		)
 		infoHeader = header.format(
 			pageTitle=f"Info: {title}",
@@ -305,12 +310,18 @@ class Writer(object):
 			)
 			for key, value in glos.iterInfo():
 				_file.write(
-					f'<tr><td>{key}</td><td>{value}</td></tr>\n',
+					f"<tr><td>{key}</td><td>{value}</td></tr>\n",
 				)
 			_file.write("</table></body></html>")
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def _subResSrc(self, m: "re.Match") -> str:
+		url = m.group(1)
+		if "://" in url:
+			return m.group(0)
+		url = "res/" + url
+		return f' src="{url}"'
 
+	def write(self) -> "Generator[None, EntryType, None]":
 		encoding = self._encoding
 		resources = self._resources
 		max_file_size = self._max_file_size
@@ -354,18 +365,15 @@ class Writer(object):
 		if self._dark:
 			style = darkStyle
 
-		if self._css:
-			cssLink = '<link rel="stylesheet" href="style.css" />'
-		else:
-			cssLink = ""
+		cssLink = '<link rel="stylesheet" href="style.css" />' if self._css else ""
 
 		header = (
-			'<!DOCTYPE html>\n'
-			'<html><head>'
-			f'<title>{{pageTitle}}</title>'
+			"<!DOCTYPE html>\n"
+			"<html><head>"
+			"<title>{pageTitle}</title>"
 			f'<meta charset="{encoding}">'
 			f'<style type="text/css">{style}{{customStyle}}</style>{cssLink}'
-			'</meta></head><body>\n'
+			"</meta></head><body>\n"
 		)
 
 		def pageHeader(n: int) -> str:
@@ -378,12 +386,16 @@ class Writer(object):
 			links = []
 			if len(self._filenameList) > 1:
 				links.append(f'<a href="./{self._filenameList[-2]}">&#9664;</a>')
-			links.append(f'<a href="./{self.getNextFilename()}">&#9654;</a>')
-			links.append('<a href="./info.html">ℹ️</a></div>')
+			links.extend(
+				[
+					f'<a href="./{self.getNextFilename()}">&#9654;</a>',
+					'<a href="./info.html">ℹ️</a></div>',  # noqa: RUF001
+				],
+			)
 			return (
-				'<nav style="text-align: center; font-size: 2.5em;">' +
-				f'{nbsp}{nbsp}{nbsp}'.join(links) +
-				'</nav>'
+				'<nav style="text-align: center; font-size: 2.5em;">'
+				+ f"{nbsp}{nbsp}{nbsp}".join(links)
+				+ "</nav>"
 			)
 
 		tailSize = len(self._tail.encode(encoding))
@@ -402,7 +414,7 @@ class Writer(object):
 
 		re_fixed_link = re.compile(
 			r'<a (?:[^<>]*? )?href="#([^<>"]+?)">[^<>]+?</a>',
-			re.I,
+			re.IGNORECASE,
 		)
 
 		linkTargetSet = set()
@@ -423,12 +435,12 @@ class Writer(object):
 				linkTargetSet.add(target)
 				start = m.start()
 				b_start = len(text[:start].encode(encoding))
-				b_size = len(text[start:m.end()].encode(encoding))
+				b_size = len(text[start : m.end()].encode(encoding))
 				linksTxtFileObj.write(
 					f"{escapeNTB(target)}\t"
-					f"{len(self._filenameList)-1}\t"
-					f"{hex(pos+b_start)[2:]}\t"
-					f"{hex(b_size)[2:]}\n",
+					f"{len(self._filenameList) - 1}\t"
+					f"{pos + b_start:x}\t"
+					f"{b_size:x}\n",
 				)
 				linksTxtFileObj.flush()
 
@@ -452,7 +464,7 @@ class Writer(object):
 			defi = entry.defi
 			defiFormat = entry.defiFormat
 
-			if defi.startswith('<!DOCTYPE html>') and defiFormat != "h":
+			if defi.startswith("<!DOCTYPE html>") and defiFormat != "h":
 				log.error(f"bad {defiFormat=}")
 				defiFormat = "h"
 
@@ -461,19 +473,16 @@ class Writer(object):
 				if "\n" in defi:
 					# could be markdown or unformatted plaintext
 					# FIXME: this changes the font to a monospace
-					defi = f'<pre>{defi}</pre>'
+					defi = f"<pre>{defi}</pre>"
 			elif defiFormat == "h":
+				defi = self._resSrcPattern.sub(self._subResSrc, defi)
 				if escape_defi:
 					defi = html.escape(defi)
-				defi = defi.replace(' src="./', ' src="./res/')
 
 			entryId = f"entry{entryIndex}"
 
 			if _word_title:
-				words = [
-					html.escape(word)
-					for word in entry.l_word
-				]
+				words = [html.escape(word) for word in entry.l_word]
 				title = glos.wordTitleStr(
 					wordSep.join(words),
 					sample=entry.l_word[0],
@@ -481,27 +490,30 @@ class Writer(object):
 				)
 
 			if not title:
-				title = f'Entry {entryIndex}'
+				title = f"Entry {entryIndex}"
 
 			# entry_link_sym = "&#182;"
 			entry_link_sym = "&#128279;"
 			text = (
 				f'<div id="{entryId}">{title}{nbsp}{nbsp}'
 				f'<a class="no_ul" class="entry_link" href="#{entryId}">'
-				f'{entry_link_sym}</a>'
-				f'{getEntryWebLink(entry)}'
+				f"{entry_link_sym}</a>"
+				f"{getEntryWebLink(entry)}"
 				f"<br>\n{defi}"
-				'</div>\n'
-				'<hr>\n'
+				"</div>\n"
+				"<hr>\n"
 			)
 			pos = fileObj.tell()
-			if pos > initFileSizeMax:
-				if pos > max_file_size - len(text.encode(encoding)):
-					fileObj = self.nextFile()
-					fileObj.write(pageHeader(
+			if pos > initFileSizeMax and pos > max_file_size - len(
+				text.encode(encoding),
+			):
+				fileObj = self.nextFile()
+				fileObj.write(
+					pageHeader(
 						len(self._filenameList) - 1,
-					))
-					fileObj.write(navBar())
+					),
+				)
+				fileObj.write(navBar())
 			pos = fileObj.tell()
 			tmpFilename = escapeNTB(self._filenameList[-1])
 			for word in entry.l_word:

@@ -3,11 +3,12 @@
 import os
 import re
 import shutil
-import typing
 from os.path import isfile, splitext
-from typing import TYPE_CHECKING, Generator, Iterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+	from collections.abc import Generator, Iterator
+
 	from pyglossary import slob
 
 from pyglossary.core import cacheDir, log, pip
@@ -20,11 +21,27 @@ from pyglossary.option import (
 	StrOption,
 )
 
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+	"Writer",
+]
+
 enable = True
 lname = "aard2_slob"
-format = 'Aard2Slob'
-description = 'Aard 2 (.slob)'
-extensions = ('.slob',)
+format = "Aard2Slob"
+description = "Aard 2 (.slob)"
+extensions = (".slob",)
 extensionCreate = ".slob"
 singleFile = True
 kind = "binary"
@@ -51,7 +68,7 @@ optionsProp: "dict[str, Option]" = {
 		comment="split up by given approximate file size\nexamples: 100m, 1g",
 	),
 	"file_size_approx_check_num_entries": IntOption(
-		comment="for file_size_approx, check every [?] entries",
+		comment="for file_size_approx, check every `[?]` entries",
 	),
 	"separate_alternates": BoolOption(
 		comment="add alternate headwords as separate entries to slob",
@@ -61,6 +78,9 @@ optionsProp: "dict[str, Option]" = {
 	),
 	"version_info": BoolOption(
 		comment="add version info tags to slob file",
+	),
+	"audio_goldendict": BoolOption(
+		comment="Convert audio links for GoldenDict (desktop)",
 	),
 }
 
@@ -72,63 +92,69 @@ extraDocs = [
 	),
 ]
 
+t_created_at = "created.at"
+t_label = "label"
+t_created_by = "created.by"
+t_copyright = "copyright"
+t_license_name = "license.name"
+t_license_url = "license.url"
+t_uri = "uri"
+t_edition = "edition"
 
-class Reader(object):
+supported_tags = {
+	t_label,
+	t_created_at,
+	t_created_by,
+	t_copyright,
+	t_uri,
+	t_edition,
+}
+
+class Reader:
 	depends = {
 		"icu": "PyICU",  # >=1.5
 	}
 
-	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 		self._re_bword = re.compile(
-			'(<a href=[^<>]+?>)',
-			re.I,
+			"(<a href=[^<>]+?>)",
+			re.IGNORECASE,
 		)
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		if self._slobObj is not None:
 			self._slobObj.close()
 		self._clear()
 
-	def _clear(self: "typing.Self") -> None:
+	def _clear(self) -> None:
 		self._filename = ""
 		self._slobObj: "slob.Slob | None" = None
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		try:
-			import icu  # noqa: F401
+			import icu  # type: ignore # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install PyICU` to install"
 			raise e
 		from pyglossary import slob
+
 		self._filename = filename
 		self._slobObj = slob.open(filename)
 		tags = dict(self._slobObj.tags.items())
 
-		try:
-			name = tags.pop("label")
-		except KeyError:
-			pass
-		else:
-			self._glos.setInfo("name", name)
+		if t_label in tags:
+			self._glos.setInfo("name", tags[t_label])
 
-		try:
-			creationTime = tags.pop("created.at")
-		except KeyError:
-			pass
-		else:
-			self._glos.setInfo("creationTime", creationTime)
+		if t_created_at in tags:
+			self._glos.setInfo("creationTime", tags[t_created_at])
 
-		try:
-			createdBy = tags.pop("created.by")
-		except KeyError:
-			pass
-		else:
-			self._glos.setInfo("author", createdBy)
+		if t_created_by in tags:
+			self._glos.setInfo("author", tags[t_created_by])
 
 		copyrightLines = []
-		for key in ("copyright", "license.name", "license.url"):
+		for key in (t_copyright, t_license_name, t_license_url):
 			try:
 				value = tags.pop(key)
 			except KeyError:
@@ -137,38 +163,34 @@ class Reader(object):
 		if copyrightLines:
 			self._glos.setInfo("copyright", "\n".join(copyrightLines))
 
-		try:
-			uri = tags.pop("uri")
-		except KeyError:
-			pass
-		else:
-			self._glos.setInfo("website", uri)
+		if t_uri in tags:
+			self._glos.setInfo("website", tags[t_uri])
 
-		try:
-			edition = tags.pop("edition")
-		except KeyError:
-			pass
-		else:
-			self._glos.setInfo("edition", edition)
+		if t_edition in tags:
+			self._glos.setInfo("edition", tags[t_edition])
 
 		for key, value in tags.items():
+			if key in supported_tags:
+				continue
 			self._glos.setInfo(f"slob.{key}", value)
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		if self._slobObj is None:
 			log.error("called len() on a reader which is not open")
 			return 0
 		return len(self._slobObj)
 
-	def _href_sub(self: "typing.Self", m: "re.Match") -> str:
+	def _href_sub(self, m: "re.Match") -> str:
 		st = m.group(0)
 		if "//" in st:
 			return st
-		return st.replace('href="', 'href="bword://')\
-			.replace("href='", "href='bword://")
+		return st.replace('href="', 'href="bword://').replace(
+			"href='", "href='bword://",
+		)
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType | None]":
+	def __iter__(self) -> "Iterator[EntryType | None]":
 		from pyglossary.slob import MIME_HTML, MIME_TEXT
+
 		if self._slobObj is None:
 			raise RuntimeError("iterating over a reader while it's not open")
 
@@ -180,7 +202,7 @@ class Reader(object):
 		# are not all consecutive. so we have to keep a set of blob IDs
 
 		for blob in slobObj:
-			_id = blob.id
+			_id = blob.identity
 			if _id in blobSet:
 				yield None  # update progressbar
 				continue
@@ -206,7 +228,7 @@ class Reader(object):
 			yield self._glos.newEntry(word, defi, defiFormat=defiFormat)
 
 
-class Writer(object):
+class Writer:
 	depends = {
 		"icu": "PyICU",
 	}
@@ -219,6 +241,8 @@ class Writer(object):
 	_word_title: bool = False
 	_version_info: bool = False
 
+	_audio_goldendict: bool = False
+
 	resourceMimeTypes = {
 		"png": "image/png",
 		"jpeg": "image/jpeg",
@@ -228,36 +252,43 @@ class Writer(object):
 		"webp": "image/webp",
 		"tiff": "image/tiff",
 		"tif": "image/tiff",
+		"bmp": "image/bmp",
 		"css": "text/css",
 		"js": "application/javascript",
 		"json": "application/json",
 		"woff": "application/font-woff",
+		"woff2": "application/font-woff2",
 		"ttf": "application/x-font-ttf",
 		"otf": "application/x-font-opentype",
 		"mp3": "audio/mpeg",
+		"ogg": "audio/ogg",
+		"spx": "audio/x-speex",
+		"wav": "audio/wav",
 		"ini": "text/plain",
 		# "application/octet-stream+xapian",
 		"eot": "application/vnd.ms-fontobject",
 		"pdf": "application/pdf",
+		"mp4": "video/mp4",
 	}
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
 		self._resPrefix = ""
 		self._slobWriter: "slob.Writer | None" = None
 
 	def _slobObserver(
-		self: "typing.Self",
+		self,
 		event: "slob.WriterEvent",  # noqa: F401, F821
 	) -> None:
 		log.debug(f"slob: {event.name}{': ' + event.data if event.data else ''}")
 
-	def _open(self: "typing.Self", filename: str, namePostfix: str) -> "slob.Writer":
+	def _open(self, filename: str, namePostfix: str) -> "slob.Writer":
 		from pyglossary import slob
+
 		if isfile(filename):
 			shutil.move(filename, f"{filename}.bak")
-			log.warning(f"renamed existing {filename!r} to {filename+'.bak'!r}")
+			log.warning(f"renamed existing {filename!r} to {filename + '.bak'!r}")
 		self._slobWriter = slobWriter = slob.Writer(
 			filename,
 			observer=self._slobObserver,
@@ -268,22 +299,23 @@ class Writer(object):
 		slobWriter.tag("label", self._glos.getInfo("name") + namePostfix)
 		return slobWriter
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		try:
 			import icu  # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install PyICU` to install"
 			raise e
 		if isfile(filename):
-			raise IOError(f"File '{filename}' already exists")
+			raise OSError(f"File '{filename}' already exists")
 		namePostfix = ""
 		if self._file_size_approx > 0:
 			namePostfix = " (part 1)"
 		self._open(filename, namePostfix)
 		self._filename = filename
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		from time import time
+
 		self._filename = ""
 		if self._slobWriter is None:
 			return
@@ -293,7 +325,7 @@ class Writer(object):
 		log.info(f"Finalizing slob file took {time() - t0:.1f} seconds")
 		self._slobWriter = None
 
-	def addDataEntry(self: "typing.Self", entry: "EntryType") -> None:
+	def addDataEntry(self, entry: "EntryType") -> None:
 		slobWriter = self._slobWriter
 		if slobWriter is None:
 			raise ValueError("slobWriter is None")
@@ -302,18 +334,18 @@ class Writer(object):
 		ext = ext.lstrip(os.path.extsep).lower()
 		content_type = self.resourceMimeTypes.get(ext)
 		if not content_type:
-			log.error(f'unknown content type for {rel_path!r}')
+			log.error(f"Aard2 slob: unknown content type for {rel_path!r}")
 			return
 		content = entry.data
 		key = self._resPrefix + rel_path
 		try:
 			key.encode(slobWriter.encoding)
 		except UnicodeEncodeError:
-			log.error('Failed to add, broken unicode in key: {!a}'.format(key))
+			log.error(f"Failed to add, broken unicode in key: {key!a}")
 			return
 		slobWriter.add(content, key, content_type=content_type)
 
-	def addEntry(self: "typing.Self", entry: "EntryType") -> None:
+	def addEntry(self, entry: "EntryType") -> None:
 		words = entry.l_word
 		b_defi = entry.defi.encode("utf-8")
 		_ctype = self._content_type
@@ -335,6 +367,20 @@ class Writer(object):
 		if defiFormat == "h":
 			b_defi = b_defi.replace(b'"bword://', b'"')
 			b_defi = b_defi.replace(b"'bword://", b"'")
+
+			if not self._audio_goldendict:
+				b_defi = b_defi.replace(
+					b"""href="sound://""",
+					b'''onclick="new Audio(this.href).play(); return false;" href="''',
+				)
+				b_defi = b_defi.replace(
+					b"""href='sound://""",
+					b"""onclick="new Audio(this.href).play(); return false;" href='""",
+				)
+				b_defi = b_defi.replace(b"""<img src="/""", b'''<img src="''')
+				b_defi = b_defi.replace(b"""<img src='""", b"""<img src='""")
+				b_defi = b_defi.replace(b"""<img src="file:///""", b'''<img src="''')
+				b_defi = b_defi.replace(b"""<img src='file:///""", b"""<img src='""")
 
 		if not _ctype:
 			if defiFormat == "h":
@@ -365,7 +411,7 @@ class Writer(object):
 				content_type=_ctype,
 			)
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		slobWriter = self._slobWriter
 		if slobWriter is None:
 			raise ValueError("slobWriter is None")
@@ -384,17 +430,20 @@ class Writer(object):
 			else:
 				self.addEntry(entry)
 
-			if file_size_approx > 0:
-				check_every = self._file_size_approx_check_num_entries
-				entryCount += 1
-				if entryCount % check_every == 0:
-					sumBlobSize = slobWriter.size_data()
-					if sumBlobSize >= file_size_approx:
-						slobWriter.finalize()
-						fileIndex += 1
-						slobWriter = self._open(
-							f"{filenameNoExt}.{fileIndex}.slob",
-							f" (part {fileIndex+1})",
-						)
-						sumBlobSize = 0
-						entryCount = 0
+			if file_size_approx <= 0:
+				continue
+
+			# handle file_size_approx
+			check_every = self._file_size_approx_check_num_entries
+			entryCount += 1
+			if entryCount % check_every == 0:
+				sumBlobSize = slobWriter.size_data()
+				if sumBlobSize >= file_size_approx:
+					slobWriter.finalize()
+					fileIndex += 1
+					slobWriter = self._open(
+						f"{filenameNoExt}.{fileIndex}.slob",
+						f" (part {fileIndex + 1})",
+					)
+					sumBlobSize = 0
+					entryCount = 0

@@ -1,26 +1,25 @@
 import unicodedata
-from collections import namedtuple
+from typing import Literal, NamedTuple
 
-WritingSystem = namedtuple(
-	"WritingSystem", [
-		"name",
-		"iso",  # list[tuple[int, str]]
-		"unicode",
-		"titleTag",
-		"direction",  # ltr | rtl | ttb
-		"comma",
-		"pop",  # population in millions
-	],
-	defaults=(
-		None,  # name
-		[],  # iso
-		[],  # unicode
-		"b",  # titleTag
-		"ltr",  # direction
-		", ",  # comma
-		0,  # pop
-	),
-)
+__all__ = [
+	"WritingSystem",
+	"getAllWritingSystemsFromText",
+	"getWritingSystemFromText",
+	# 'unicodeNextWord',
+	"writingSystemByLowercaseName",
+	"writingSystemByName",
+	"writingSystemByUnicode",
+	"writingSystemList",
+]
+
+class WritingSystem(NamedTuple):
+	name: str
+	iso: list[tuple[int, str]] | list[tuple[int, str, str]] = []
+	unicode: list = []
+	titleTag: str = "b"
+	direction: Literal["ltr", "rtl", "ttb"] = "ltr"
+	comma: str = ", "
+	pop: int | float = 0  # population in millions
 
 # digits and FULLWIDTH DIGITs are considered neutral/ignored, not Latin
 
@@ -38,7 +37,6 @@ writingSystemList = [
 		comma=", ",
 		pop=4900,
 	),
-
 	WritingSystem(
 		name="Arabic",
 		iso=[(160, "Arab")],
@@ -59,12 +57,14 @@ writingSystemList = [
 	WritingSystem(
 		name="CJK",
 		iso=[
+			(285, "Bopo", "BOPOMOFO"),
 			(286, "Hang", "HANGUL"),
 			(410, "Hira", "HIRAGANA"),
 			(411, "Kana", "KATAKANA"),
 			(412, "Hrkt", "KATAKANA OR HIRAGANA"),
-			(460, "Yiii", "​Yi"),
-			(500, "Hani", "​HAN"),  # aka Hanzi, Kanji, Hanja
+			(460, "Yiii", "Yi"),
+			(499, "Nshu", "NUSHU"),
+			(500, "Hani", "HAN"),  # aka Hanzi, Kanji, Hanja
 			(501, "Hans", "SIMPLIFIED HAN"),
 			(502, "Hant", "TRADITIONAL HAN"),
 		],
@@ -79,6 +79,8 @@ writingSystemList = [
 			"HALFWIDTH HANGUL",
 			"YI",  # https://en.wikipedia.org/wiki/Yi_script
 			"FULLWIDTH LATIN",
+			"BOPOMOFO",
+			"NUSHU",
 		],
 		titleTag="big",
 		comma="、",
@@ -86,15 +88,13 @@ writingSystemList = [
 	),
 	WritingSystem(
 		name="Devanagari",
-		iso=[(315 , "Deva")],
+		iso=[(315, "Deva")],
 		unicode=["DEVANAGARI"],
 		titleTag="big",
 		comma=", ",
 		pop=610,
 	),
-
 	# _____________________________________________________
-
 	WritingSystem(
 		name="Armenian",
 		iso=[(230, "Armn")],
@@ -219,7 +219,7 @@ writingSystemList = [
 	WritingSystem(
 		name="Brahmi",
 		iso=[
-			(300, "Brah", "​Brahmi"),
+			(300, "Brah", "Brahmi"),
 		],
 		unicode=["BRAHMI"],
 		titleTag="big",
@@ -252,9 +252,7 @@ writingSystemList = [
 		comma=", ",
 		pop=38,
 	),
-
 	# _____________________________________________________
-
 	WritingSystem(
 		name="Syriac",
 		iso=[(135, "Syrc")],
@@ -300,9 +298,7 @@ writingSystemList = [
 		comma="، ",
 		pop=0.35,
 	),
-
 	# _____________________________________________________
-
 	WritingSystem(
 		name="Javanese",
 		iso=[(361, "Java")],
@@ -326,9 +322,7 @@ writingSystemList = [
 		titleTag="b",
 		# comma="", FIXME
 	),
-
 	# _____________________________________________________
-
 	WritingSystem(
 		name="SignWriting",
 		iso=[(95, "Sgnw")],
@@ -337,9 +331,7 @@ writingSystemList = [
 		direction="ttb",
 		comma="𝪇",
 	),
-
 	# _____________________________________________________
-
 	WritingSystem(
 		name="Adlam",
 		iso=[(166, "Adlm")],
@@ -378,9 +370,7 @@ writingSystemList = [
 		unicode=["NKO"],
 		titleTag="big",
 	),
-
 	# _____________________________________________________
-
 	# WritingSystem(
 	# 	name="Baybayin",
 	# 	iso=[(370, "Tglg")],
@@ -399,28 +389,17 @@ writingSystemList = [
 	# 	name="Mwangwego",
 	# 	unicode=[],
 	# ),
-
 ]
 
-for ws in writingSystemList:
-	if not ws.name:
-		raise ValueError(f"empty name in {ws}")
+for _ws in writingSystemList:
+	if not _ws.name:
+		raise ValueError(f"empty name in {_ws}")
 
-writingSystemByUnicode = {
-	uni: ws
-	for ws in writingSystemList
-	for uni in ws.unicode
-}
+writingSystemByUnicode = {uni: ws for ws in writingSystemList for uni in ws.unicode}
 
-writingSystemByName = {
-	ws.name: ws
-	for ws in writingSystemList
-}
+writingSystemByName = {ws.name: ws for ws in writingSystemList}
 
-writingSystemByLowercaseName = {
-	ws.name.lower(): ws
-	for ws in writingSystemList
-}
+writingSystemByLowercaseName = {ws.name.lower(): ws for ws in writingSystemList}
 
 unicodeNextWord = {
 	"HALFWIDTH",
@@ -431,7 +410,7 @@ unicodeNextWord = {
 
 def _getWritingSystemFromChar(char: str) -> "WritingSystem | None":
 	try:
-		unicodeWords = unicodedata.name(char).split(' ')
+		unicodeWords = unicodedata.name(char).split(" ")
 	except ValueError:
 		# if c not in string.whitespace:
 		# 	print(f"{c=}, {e}")
@@ -459,17 +438,14 @@ def _getWritingSystemFromText(
 
 def getWritingSystemFromText(
 	st: str,
-	begining: bool = False,
+	beginning: bool = False,
 ) -> "WritingSystem | None":
 	st = st.strip()
 	if not st:
 		return None
 	# some special first words in unicodedata.name(c):
 	# "RIGHT", "ASTERISK", "MODIFIER"
-	if begining:
-		k = 0
-	else:
-		k = (len(st) + 1) // 2 - 1
+	k = 0 if beginning else (len(st) + 1) // 2 - 1
 	ws = _getWritingSystemFromText(st, k, len(st))
 	if ws:
 		return ws
@@ -478,7 +454,6 @@ def getWritingSystemFromText(
 
 def getAllWritingSystemsFromText(
 	st: str,
-	begining: bool = False,
 ) -> "set[str]":
 	st = st.strip()
 	if not st:

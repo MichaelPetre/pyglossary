@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 #
 # Copyright © 2016-2019 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 #
@@ -23,6 +24,17 @@ from gi.repository import Pango as pango
 from pyglossary.core import appResDir
 
 from . import gdk, gtk
+
+__all__ = [
+	"HBox",
+	"VBox",
+	"dialog_add_button",
+	"imageFromFile",
+	"pack",
+	"rgba_parse",
+	"set_tooltip",
+	"showInfo",
+]
 
 log = logging.getLogger("pyglossary")
 
@@ -95,7 +107,7 @@ def pack(box, child, expand=False, fill=False, padding=0):
 
 def dialog_add_button(
 	dialog,
-	iconName,
+	_iconName,
 	label,
 	resId,
 	onClicked=None,

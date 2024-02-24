@@ -3,7 +3,7 @@
 # Read ABBYY Lingvo DSL dictionary format
 #
 # Copyright © 2013-2020 Saeed Rasooli <saeed.gnu@gmail.com>
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016 ivan tkachenko me@ratijas.tk
 # Copyright © 2013 Xiaoqiang Wang <xiaoqiangwang AT gmail DOT com>
 #
 # This program is a free software; you can redistribute it and/or modify
@@ -21,9 +21,9 @@
 import html
 import html.entities
 import re
-import typing
-from typing import Iterator
-from xml.sax.saxutils import escape, quoteattr
+from collections.abc import Iterator
+from os.path import dirname, isfile, join
+from typing import TYPE_CHECKING, cast
 
 from pyglossary.compression import (
 	compressionOpen,
@@ -31,16 +31,35 @@ from pyglossary.compression import (
 )
 from pyglossary.core import log
 from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.io_utils import nullTextIO
 from pyglossary.option import (
 	BoolOption,
 	EncodingOption,
 	Option,
+	StrOption,
 )
 from pyglossary.text_reader import TextFilePosWrapper
 
-from .main import (
-	DSLParser,
-)
+from .title import TitleTransformer
+from .transform import Transformer
+
+if TYPE_CHECKING:
+	import io
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+]
 
 enable = True
 lname = "dsl"
@@ -60,8 +79,8 @@ optionsProp: "dict[str, Option]" = {
 	"audio": BoolOption(
 		comment="Enable audio objects",
 	),
-	"only_fix_markup": BoolOption(
-		comment="Only fix markup, without tag conversion",
+	"example_color": StrOption(
+		comment="Examples color",
 	),
 }
 
@@ -91,10 +110,7 @@ def unescape(text: str) -> str:
 		if text[:2] == "&#":
 			# character reference
 			try:
-				if text[:3] == "&#x":
-					i = int(text[3:-1], 16)
-				else:
-					i = int(text[2:-1])
+				i = int(text[3:-1], 16) if text[:3] == "&#x" else int(text[2:-1])
 			except ValueError:
 				pass
 			else:
@@ -110,247 +126,86 @@ def unescape(text: str) -> str:
 			except KeyError:
 				pass
 		return text  # leave as is
+
 	return htmlEntityPattern.sub(fixup, text)
+
+
 # }}}
 
 
-def make_a_href(s: str) -> str:
-	return f"<a href={quoteattr(s)}>{escape(s)}</a>"
-
-
-def ref_sub(x: "re.Match") -> str:
-	return make_a_href(unescape(x.groups()[0]))
-
-
-# order matters, a lot.
-shortcuts = [
-	# canonical: m > * > ex > i > c
-	(
-		"[m1](?:-{2,})[/m]",
-		"<hr/>",
-	),
-	(
-		"[m(\\d)](?:-{2,})[/m]",
-		"<hr style=\"margin-left:\\g<1>em\"/>",
-	),
-]
-
-shortcuts = [
-	(
-		re.compile(repl.replace("[", "\\[").replace("*]", "\\*]")),
-		sub,
-	) for (repl, sub) in shortcuts
-]
-
-
 # precompiled regexs
-re_brackets_blocks = re.compile(r"\{\{[^}]*\}\}")
-re_lang_open = re.compile(r"(?<!\\)\[lang[^\]]*\]")
-re_m_open = re.compile(r"(?<!\\)\[m\d\]")
-re_c_open_color = re.compile(r"\[c (\w+)\]")
-re_sound = re.compile(r"\[s\]([^\[]*?)(wav|mp3)\s*\[/s\]")
-re_img = re.compile(r"\[s\]([^\[]*?)(jpg|jpeg|gif|tif|tiff)\s*\[/s\]")
-re_m = re.compile(r"\[m(\d)\](.*?)\[/m\]")
 re_wrapped_in_quotes = re.compile("^(\\'|\")(.*)(\\1)$")
-re_end = re.compile(r"\\$")
-re_ref = re.compile("<<(.*?)>>")
-
-
-# single instance of parser
-# it is safe as long as this script is not going multithread.
-_parse = DSLParser().parse
-
-
-def apply_shortcuts(line: str) -> str:
-	for pattern, sub in shortcuts:
-		line = pattern.sub(sub, line)
-	return line
-
-
-def _clean_tags(line: str, audio: bool) -> str:
-	r"""
-	[m{}] => <div style="margin-left:{}em">
-	[*]   => <span class="sec">
-	[ex]  => <span class="ex"><font color="steelblue">
-	[c]   => <font color="green">
-	[p]   => <i class="p"><font color="green">
-
-	[']   => <u>
-	[b]   => <b>
-	[i]   => <i>
-	[u]   => <u>
-	[sup] => <sup>
-	[sub] => <sub>
-
-	[ref]   \
-	[url]    } => <a href={}>{}</a>
-	<<...>> /
-
-	[s] =>  <object type="audio/x-wav" data="{}" width="40" height="40">
-				<param name="autoplay" value="false" />
-			</object>
-	[s] =>  <img align="top" src="{}" alt="{}" />
-
-	[t] => <font face="Helvetica" class="dsl_t">
-
-	{{...}}   \
-	[trn]      |
-	[!trn]     |
-	[trs]      } => remove
-	[!trs]     |
-	[lang ...] |
-	[com]     /
-	"""
-	# remove {{...}} blocks
-	line = re_brackets_blocks.sub("", line)
-	# remove trn tags
-	# re_trn = re.compile("\[\/?!?tr[ns]\]")
-	line = line \
-		.replace("[trn]", "") \
-		.replace("[/trn]", "") \
-		.replace("[trs]", "") \
-		.replace("[/trs]", "") \
-		.replace("[!trn]", "") \
-		.replace("[/!trn]", "") \
-		.replace("[!trs]", "") \
-		.replace("[/!trs]", "")
-
-	# remove lang tags
-	line = re_lang_open.sub("", line).replace("[/lang]", "")
-	# remove com tags
-	line = line.replace("[com]", "").replace("[/com]", "")
-
-	# escape html special characters like '<' and '>'
-	line = html.escape(html.unescape(line))
-
-	# remove t tags
-	line = line.replace(
-		"[t]",
-		"<font face=\"Helvetica\" class=\"dsl_t\">",
-	)
-	line = line.replace("[/t]", "</font>")
-
-	line = _parse(line)
-
-	line = re_end.sub("<br/>", line)
-
-	# paragraph, part one: before shortcuts.
-	line = line.replace("[m]", "[m1]")
-	# if line somewhere contains "[m_]" tag like
-	# "[b]I[/b][m1] [c][i]conj.[/i][/c][/m][m1]1) ...[/m]"
-	# then leave it alone.  only wrap in "[m1]" when no "m" tag found at all.
-	if not re_m_open.search(line):
-		line = f"[m1]{line}[/m]"
-
-	line = apply_shortcuts(line)
-
-	# paragraph, part two: if any not shourcuted [m] left?
-	line = re_m.sub(r'<div style="margin-left:\g<1>em">\g<2></div>', line)
-
-	# text formats
-
-	line = line.replace("[']", "<u>").replace("[/']", "</u>")
-	line = line.replace("[b]", "<b>").replace("[/b]", "</b>")
-	line = line.replace("[i]", "<i>").replace("[/i]", "</i>")
-	line = line.replace("[u]", "<u>").replace("[/u]", "</u>")
-	line = line.replace("[sup]", "<sup>").replace("[/sup]", "</sup>")
-	line = line.replace("[sub]", "<sub>").replace("[/sub]", "</sub>")
-
-	# color
-	line = line.replace("[c]", "<font color=\"green\">")
-	line = re_c_open_color.sub("<font color=\"\\g<1>\">", line)
-	line = line.replace("[/c]", "</font>")
-
-	# example zone
-	line = line.replace("[ex]", "<span class=\"ex\"><font color=\"steelblue\">")
-	line = line.replace("[/ex]", "</font></span>")
-
-	# secondary zone
-	line = line.replace("[*]", "<span class=\"sec\">")\
-		.replace("[/*]", "</span>")
-
-	# abbrev. label
-	line = line.replace("[p]", "<i class=\"p\"><font color=\"green\">")
-	line = line.replace("[/p]", "</font></i>")
-
-	# cross reference
-	line = line.replace("[ref]", "<<").replace("[/ref]", ">>")
-	line = line.replace("[url]", "<<").replace("[/url]", ">>")
-	line = re_ref.sub(ref_sub, line)
-
-	# sound file
-	if audio:
-		sound_tag = (
-			r'<object type="audio/x-wav" data="\g<1>\g<2>" '
-			"width=\"40\" height=\"40\">"
-			"<param name=\"autoplay\" value=\"false\" />"
-			"</object>"
-		)
-	else:
-		sound_tag = ""
-	line = re_sound.sub(sound_tag, line)
-
-	# image file
-	line = re_img.sub(
-		r'<img align="top" src="\g<1>\g<2>" alt="\g<1>\g<2>" />',
-		line,
-	)
-
-	# \[...\]
-	return line.replace("\\[", "[").replace("\\]", "]")
 
 
 def unwrap_quotes(s: str) -> str:
 	return re_wrapped_in_quotes.sub("\\2", s)
 
 
-class Reader(object):
+class Reader:
 	compressions = stdCompressions + ("dz",)
 
 	_encoding: str = ""
-	_audio: bool = False
-	_only_fix_markup: bool = False
+	_audio: bool = True
+	_example_color: str = "steelblue"
 
-	re_tags_open = re.compile(r"(?<!\\)\[(c |[cuib]\])")
-	re_tags_close = re.compile(r"\[/[cuib]\]")
-
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
-		self.clean_tags = _clean_tags
-		self._file = None
+		self._file: "io.TextIOBase" = nullTextIO
 		self._fileSize = 0
 		self._bufferLine = ""
+		self._resFileSet: "set[str]" = set()
 
-	def close(self: "typing.Self") -> None:
-		if self._file:
-			self._file.close()
-		self._file = None
+	def transform(
+		self,
+		text: str,
+		header: str,
+	) -> str:
+		tr = Transformer(
+			text,
+			currentKey=header,
+			audio=self._audio,
+			exampleColor=self._example_color,
+		)
+		try:
+			result, err = tr.transform()
+		except Exception:
+			log.exception(f"{text = }")
+			return ""
+		if err:
+			log.error(f"error in transforming {text!r}: {err}")
+			return ""
+		if result is None:
+			log.error(f"error in transforming {text!r}: result is None")
+			return ""
+		resText = result.output.strip()
+		self._resFileSet.update(tr.resFileSet)
+		return resText
 
-	def __len__(self: "typing.Self") -> int:
+	def close(self) -> None:
+		self._file.close()
+		self._file = nullTextIO
+
+	def __len__(self) -> int:
 		# FIXME
 		return 0
 
-	def _clean_tags_only_markup(self: "typing.Self", line: str, audio: bool) -> str:
-		return _parse(line)
-
 	def open(
-		self: "typing.Self",
+		self,
 		filename: str,
 	) -> None:
 		self._filename = filename
-		if self._only_fix_markup:
-			self.clean_tags = self._clean_tags_only_markup
-		else:
-			self.clean_tags = _clean_tags
 
 		encoding = self._encoding
 		if not encoding:
 			encoding = self.detectEncoding()
-		cfile = compressionOpen(
-			filename,
-			dz=True,
-			mode="rt",
-			encoding=encoding,
+		cfile = cast(
+			"io.TextIOBase",
+			compressionOpen(
+				filename,
+				dz=True,
+				mode="rt",
+				encoding=encoding,
+			),
 		)
 
 		if cfile.seekable():
@@ -365,7 +220,7 @@ class Reader(object):
 
 		# read header
 		for line in self._file:
-			line = line.rstrip().lstrip('\ufeff')  # noqa: B005
+			line = line.rstrip().lstrip("\ufeff")  # noqa: B005
 			# \ufeff -> https://github.com/ilius/pyglossary/issues/306
 			if not line:
 				continue
@@ -374,7 +229,7 @@ class Reader(object):
 				break
 			self.processHeaderLine(line)
 
-	def detectEncoding(self: "typing.Self") -> str:
+	def detectEncoding(self) -> str:
 		for testEncoding in ("utf-8", "utf-16"):
 			with compressionOpen(
 				self._filename,
@@ -396,10 +251,10 @@ class Reader(object):
 			", specify it by: --read-options encoding=ENCODING",
 		)
 
-	def setInfo(self: "typing.Self", key: str, value: str) -> None:
+	def setInfo(self, key: str, value: str) -> None:
 		self._glos.setInfo(key, unwrap_quotes(value))
 
-	def processHeaderLine(self: "typing.Self", line: str) -> None:
+	def processHeaderLine(self, line: str) -> None:
 		if line.startswith("#NAME"):
 			self.setInfo("name", unwrap_quotes(line[6:].strip()))
 		elif line.startswith("#INDEX_LANGUAGE"):
@@ -407,7 +262,7 @@ class Reader(object):
 		elif line.startswith("#CONTENTS_LANGUAGE"):
 			self._glos.targetLangName = unwrap_quotes(line[19:].strip())
 
-	def _iterLines(self: "typing.Self") -> "Iterator[str]":
+	def _iterLines(self) -> "Iterator[str]":
 		if self._bufferLine:
 			line = self._bufferLine
 			self._bufferLine = ""
@@ -415,73 +270,79 @@ class Reader(object):
 		for line in self._file:
 			yield line
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
-		current_key = ""
-		current_key_alters = []
-		current_text = []
-		line_type = "header"
-		unfinished_line = ""
-		re_tags_open = self.re_tags_open
-		re_tags_close = self.re_tags_close
+	def sub_title_line(self, m: "re.Match") -> str:
+		line = m.group(0)[1:-1]
+		line = line.replace("[']", "")  # FIXME
+		line = line.replace("[/']", "")
+		return line  # noqa: RET504
 
+	def __iter__(self) -> "Iterator[EntryType]":
+		term_lines: "list[str]" = []
+		text_lines: "list[str]" = []
 		for line in self._iterLines():
-			line = line.rstrip()
-			if not line:
+			if not line.strip():
+				continue
+			if line.startswith((" ", "\t")):  # text
+				text_lines.append(line)
 				continue
 
-			# texts
-			if line.startswith((" ", "\t")):
-				line_type = "text"
-				line = unfinished_line + line.lstrip()
+			# header or alt
+			if text_lines:
+				yield self.parseEntryBlock(term_lines, text_lines)
+				term_lines = []
+				text_lines = []
 
-				# some ill formatted source may have tags spanned into
-				# multiple lines
-				# try to match opening and closing tags
-				tags_open = re_tags_open.findall(line)
-				tags_close = re_tags_close.findall(line)
-				if len(tags_open) != len(tags_close):
-					unfinished_line = line
-					continue
+			term_lines.append(line)
 
-				unfinished_line = ""
+		if text_lines:
+			yield self.parseEntryBlock(term_lines, text_lines)
 
-				# convert DSL tags to HTML tags
-				line = self.clean_tags(line, self._audio)
-				current_text.append(line)
+		resDir = dirname(self._filename)
+		for fname in sorted(self._resFileSet):
+			fpath = join(resDir, fname)
+			if not isfile(fpath):
+				log.warning(f"resource file not found: {fname}")
 				continue
+			with open(fpath, mode="rb") as _file:
+				data = _file.read()
+			yield self._glos.newDataEntry(fname, data)
 
-			# title word(s)
-			# alternative titles
-			if line_type == "title":
-				current_key_alters.append(line)
+	def parseEntryBlock(
+		self,
+		term_lines: "list[str]",
+		text_lines: "list[str]",
+	) -> EntryType:
+		terms = []
+		defiTitles = []
+		for line in term_lines:
+			tr = TitleTransformer(line)
+			res, err = tr.transform()
+			if err:
+				log.error(err)
 				continue
+			if res is None:
+				log.error("res is None for line={line!r}")
+				continue
+			term = res.output.strip()
+			terms.append(term)
+			term2 = res.outputAlt.strip()
+			if term2 != term:
+				terms.append(term2)
+			title = tr.title.strip()
+			if title != term:
+				defiTitles.append("<b>" + title + "</b>")
 
-			# previous line type is text -> start new title
-			# append previous entry
-			if line_type == "text":
-				if unfinished_line:
-					# line may be skipped if ill formatted
-					current_text.append(self.clean_tags(unfinished_line, self._audio))
-				yield self._glos.newEntry(
-					[current_key] + current_key_alters,
-					"\n".join(current_text),
-					byteProgress=(
-						(self._file.tell(), self._fileSize)
-						if self._fileSize
-						else None
-					),
-				)
+		defi = self.transform(
+			text="".join(text_lines),
+			header=terms[0],
+		)
+		if defiTitles:
+			defi = "<br/>".join(defiTitles + [defi])
 
-			# start new entry
-			current_key = line
-			current_key_alters = []
-			current_text = []
-			unfinished_line = ""
-			line_type = "title"
-
-		# last entry
-		if line_type == "text":
-			yield self._glos.newEntry(
-				[current_key] + current_key_alters,
-				"\n".join(current_text),
-			)
+		return self._glos.newEntry(
+			terms,
+			defi,
+			byteProgress=(
+				(self._file.tell(), self._fileSize) if self._fileSize else None
+			),
+		)

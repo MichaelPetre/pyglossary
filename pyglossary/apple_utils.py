@@ -9,29 +9,56 @@
 # but we actually prefer to set font that are free and more widely available
 # in all operating systems
 
+# also see:
+# https://github.com/servo/servo/blob/master/components/style/properties/counted_unknown_properties.py
+
 import re
-import typing.re
 
 from .core import log
+
+__all__ = ["substituteAppleCSS"]
+
+# remove these keys along with their value
+cssKeyRemove = {
+	b"-webkit-text-combine",
+	# ^ value: horizontal
+	b"-apple-color-filter",
+	# ^ value: apple-invert-lightness()
+	b"-webkit-overflow-scrolling",
+	# ^ controls whether or not touch devices use momentum-based scrolling
+	# https://developer.mozilla.org/en-US/docs/Web/CSS/-webkit-overflow-scrolling
+	# values: touch, auto
+}
+
+
+cssKeyRemovePattern = re.compile(
+	rb"[ \t]*(" + b"|".join(cssKeyRemove) + rb")\s*:[^;}]*;\s*",
+)
 
 cssMapping: "dict[str, str]" = {
 	# I didn't actually find these font values:
 	"-apple-system-body": '"Helvetica Neue"',
 	"-apple-system": '"Helvetica Neue"',
-
-	# I also didn't find these values:
-	"-webkit-border-bottom-left-radius": "5",
-	"-webkit-border-bottom-right-radius": "5",
-	"-webkit-border-radius": "5",
-	"-webkit-border-top-left-radius": "5",
-	"-webkit-border-top-right-radius": "5",
-	# "-webkit-hyphens"  # used as key
-	"-webkit-link": "rgb(0, 0, 238)",  # color of <a> links
-
+	"-webkit-link": "rgb(0, 0, 238)",  # value, color of <a> links
 	"-webkit-control": "normal normal normal normal 13px/normal system-ui",
 	"-webkit-mini-control": "normal normal normal normal 9px/normal system-ui",
 	"-webkit-small-control": "normal normal normal normal 11px/normal system-ui",
-
+	"-webkit-isolate": "isolate",  # value for "unicode-bidi"
+	"-webkit-isolate-override": "isolate-override",  # value for "unicode-bidi"
+	"-webkit-border-bottom-left-radius": "border-bottom-left-radius",  # key
+	"-webkit-border-bottom-right-radius": "border-bottom-right-radius",  # key
+	"-webkit-border-radius": "border-radius",  # key
+	"-webkit-border-top-left-radius": "border-top-left-radius",  # key
+	"-webkit-border-top-right-radius": "border-top-right-radius",  # key
+	"-webkit-hyphens": "hyphens",  # key
+	"-webkit-writing-mode": "writing-mode",  # key
+	"-webkit-column-width": "column-width",  # key
+	"-webkit-column-rule-color": "column-rule-color",  # key
+	"-webkit-column-rule-style": "column-rule-style",  # key
+	"-webkit-column-rule-width": "column-rule-width",  # key
+	"-webkit-ruby-position": "ruby-position",  # key
+	# not so sure about this:
+	"-webkit-padding-start": "padding-inline-start",  # key
 	"-apple-system-alternate-selected-text": "rgb(255, 255, 255)",
 	"-apple-system-blue": "rgb(0, 122, 255)",
 	"-apple-system-brown": "rgb(162, 132, 94)",
@@ -67,16 +94,19 @@ cssMapping: "dict[str, str]" = {
 }
 
 cssParamPattern = re.compile(
-	r"(-(apple|webkit)-[a-z\-]+)",
+	rb"(-(apple|webkit)-[a-z\-]+)",
 )
 
-def _subCSS(m: "typing.re.Match") -> str:
-	key = m.group(0)
-	value = cssMapping.get(key)
-	if value is None:
-		log.warning(f"unrecognized CSS param: {key!r}")
-		return key
-	return value
 
-def substituteAppleCSS(cssText: str) -> str:
-	return cssParamPattern.sub(_subCSS, cssText)
+def _subCSS(m: "re.Match") -> bytes:
+	b_key = m.group(0)
+	value = cssMapping.get(b_key.decode("ascii"))
+	if value is None:
+		log.warning(f"unrecognized CSS param: {b_key.decode('ascii')!r}")
+		return b_key
+	return value.encode("ascii")
+
+
+def substituteAppleCSS(css: bytes) -> bytes:
+	css = cssKeyRemovePattern.sub(b"", css)
+	return cssParamPattern.sub(_subCSS, css)

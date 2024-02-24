@@ -1,49 +1,57 @@
 import re
 import sys
-import typing
 import unittest
 from os.path import abspath, dirname
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
+from glossary_v2_test import TestGlossaryBase
+
 from pyglossary.glossary import Glossary
-from tests.glossary_v2_test import TestGlossaryBase
+
+skip_module = False
 
 
 class TestGlossaryEPUB2(TestGlossaryBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 
-		self.dataFileCRC32.update({
-			"100-en-fa-res.slob": "0216d006",
-			"100-en-fa-res-slob.epub": "30506767",
-			"100-en-fa-prefix3.epub": "af8ee89d",
-			"300-rand-en-fa-prefix3.epub": "c0308c97",
-		})
+		self.dataFileCRC32.update(
+			{
+				"100-en-fa-res.slob": "0216d006",
+				"100-en-fa-res-slob-v2.epub": "304d174d",
+				"100-en-fa-prefix3-v2.epub": "1b7244ca",
+				"300-rand-en-fa-prefix3-v2.epub": "b5dd9ec6",
+			},
+		)
 
-	def remove_toc_uid(self: "typing.Self", data):
+	def setUp(self):
+		if skip_module:
+			self.skipTest("module is skipped")
+		TestGlossaryBase.setUp(self)
+
+	def remove_toc_uid(self, data):
 		return re.sub(
 			b'<meta name="dtb:uid" content="[0-9a-f]{32}" />',
 			b'<meta name="dtb:uid" content="" />',
 			data,
 		)
 
-	def remove_content_extra(self: "typing.Self", data):
+	def remove_content_extra(self, data):
 		data = re.sub(
 			b'<dc:identifier id="uid" opf:scheme="uuid">[0-9a-f]{32}</dc:identifier>',
 			b'<dc:identifier id="uid" opf:scheme="uuid"></dc:identifier>',
 			data,
 		)
-		data = re.sub(
+		return re.sub(
 			b'<dc:date opf:event="creation">[0-9-]{10}</dc:date>',
 			b'<dc:date opf:event="creation"></dc:date>',
 			data,
 		)
-		return data
 
 	def convert_to_epub(
-		self: "typing.Self",
+		self,
 		inputFname,
 		outputFname,
 		testId,
@@ -72,63 +80,63 @@ class TestGlossaryEPUB2(TestGlossaryBase):
 			},
 		)
 
-	def test_convert_to_epub_1(self: "typing.Self"):
+	def test_convert_to_epub_1(self):
 		self.convert_to_epub(
 			"100-en-fa-res.slob",
-			"100-en-fa-res-slob",
+			"100-en-fa-res-slob-v2",
 			"1",
 		)
 
-	def test_convert_to_epub_2(self: "typing.Self"):
+	def test_convert_to_epub_2(self):
 		for sort in (True, False):
 			self.convert_to_epub(
 				"100-en-fa-res.slob",
-				"100-en-fa-res-slob",
+				"100-en-fa-res-slob-v2",
 				"2",
 				sort=sort,
 			)
 
-	def test_convert_to_epub_3(self: "typing.Self"):
+	def test_convert_to_epub_3(self):
 		for sqlite in (True, False):
 			self.convert_to_epub(
 				"100-en-fa-res.slob",
-				"100-en-fa-res-slob",
+				"100-en-fa-res-slob-v2",
 				"3",
 				sqlite=sqlite,
 			)
 
-	def test_convert_to_epub_4(self: "typing.Self"):
+	def test_convert_to_epub_4(self):
 		for direct in (True, False):
 			self.convert_to_epub(
 				"100-en-fa-res.slob",
-				"100-en-fa-res-slob",
+				"100-en-fa-res-slob-v2",
 				"4",
 				direct=direct,
 			)
 
-	def test_convert_to_epub_5(self: "typing.Self"):
+	def test_convert_to_epub_5(self):
 		for sqlite in (True, False):
 			self.convert_to_epub(
 				"100-en-fa.txt",
-				"100-en-fa-prefix3",
+				"100-en-fa-prefix3-v2",
 				"5",
 				sqlite=sqlite,
 				writeOptions={"group_by_prefix_length": 3},
 			)
 
-	def test_convert_to_epub_6(self: "typing.Self"):
+	def test_convert_to_epub_6(self):
 		self.convert_to_epub(
 			"300-rand-en-fa.txt",
-			"300-rand-en-fa-prefix3",
+			"300-rand-en-fa-prefix3-v2",
 			"6",
 			sqlite=True,
 			writeOptions={"group_by_prefix_length": 3},
 		)
 
-	def test_convert_to_epub_7(self: "typing.Self"):
+	def test_convert_to_epub_7(self):
 		self.convert_to_epub(
 			"300-rand-en-fa.txt",
-			"300-rand-en-fa-prefix3",
+			"300-rand-en-fa-prefix3-v2",
 			"7",
 			sqlite=False,
 			writeOptions={"group_by_prefix_length": 3},

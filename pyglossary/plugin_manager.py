@@ -20,9 +20,8 @@
 import logging
 import os
 import sys
-import types
 from os.path import isdir, join
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import core
 from .core import (
@@ -36,13 +35,20 @@ from .glossary_utils import (
 )
 from .plugin_prop import PluginProp
 
+__all__ = ["PluginManager"]
+
 log = logging.getLogger("pyglossary")
 
+class DetectedFormat(NamedTuple):
+	filename: str
+	formatName: str
+	compression: str
 
-class PluginManager(object):
+
+class PluginManager:
 	plugins: "dict[str, PluginProp]" = {}
 	pluginByExt: "dict[str, PluginProp]" = {}
-	loadedModules: "set[types.ModuleType]" = set()
+	loadedModules: "set[str]" = set()
 
 	formatsReadOptions: "dict[str, dict[str, Any]]" = {}
 	formatsWriteOptions: "dict[str, dict[str, Any]]" = {}
@@ -52,11 +58,10 @@ class PluginManager(object):
 	writeFormats: "list[str]" = []
 
 	@classmethod
-	def loadPluginsFromJson(cls: "type", jsonPath: str) -> None:
+	def loadPluginsFromJson(cls: "type[PluginManager]", jsonPath: str) -> None:
 		import json
-		from os.path import join
 
-		with open(jsonPath) as _file:
+		with open(jsonPath, encoding="utf-8") as _file:
 			data = json.load(_file)
 
 		for attrs in data:
@@ -69,16 +74,15 @@ class PluginManager(object):
 
 	@classmethod
 	def loadPlugins(
-		cls: "type",
+		cls: "type[PluginManager]",
 		directory: str,
 		skipDisabled: bool = True,
 	) -> None:
 		"""
-		executed on startup. as name implies, loads plugins from directory
-		it skips importing plugin modules that are already loaded
+		Load plugins from directory on startup.
+		Skip importing plugin modules that are already loaded.
 		"""
 		import pkgutil
-		from os.path import isdir
 
 		# log.debug(f"Loading plugins from directory: {directory!r}")
 		if not isdir(directory):
@@ -88,8 +92,7 @@ class PluginManager(object):
 		moduleNames = [
 			moduleName
 			for _, moduleName, _ in pkgutil.iter_modules([directory])
-			if moduleName not in cls.loadedModules and
-			moduleName not in ("formats_common",)
+			if moduleName not in cls.loadedModules and moduleName != "formats_common"
 		]
 		moduleNames.sort()
 
@@ -100,7 +103,7 @@ class PluginManager(object):
 
 	@classmethod
 	def _loadPluginByDict(
-		cls: "type",
+		cls: "type[PluginManager]",
 		attrs: "dict[str, Any]",
 		modulePath: str,
 	) -> None:
@@ -135,11 +138,11 @@ class PluginManager(object):
 			cls.writeFormats.append(format)
 
 		if log.level <= core.TRACE:
-			prop.module  # to make sure importing works
+			prop.module  # noqa: B018, to make sure importing works
 
 	@classmethod
 	def _loadPlugin(
-		cls: "type",
+		cls: "type[PluginManager]",
 		moduleName: str,
 		skipDisabled: bool = True,
 	) -> None:
@@ -185,10 +188,11 @@ class PluginManager(object):
 			cls.writeFormats.append(name)
 
 	@classmethod
-	def _findPlugin(cls: "type", query: str) -> "PluginProp | None":
-		"""
-			find plugin by name or extension
-		"""
+	def _findPlugin(
+		cls: "type[PluginManager]",
+		query: str,
+	) -> "PluginProp | None":
+		"""Find plugin by name or extension."""
 		plugin = cls.plugins.get(query)
 		if plugin:
 			return plugin
@@ -199,22 +203,17 @@ class PluginManager(object):
 
 	@classmethod
 	def detectInputFormat(
-		cls: "type",
+		cls: "type[PluginManager]",
 		filename: str,
 		format: str = "",
 		quiet: bool = False,
-	) -> "tuple[str, str, str] | None":
-		"""
-			returns (filename, format, compression) or None
-		"""
-
+	) -> "DetectedFormat | None":
 		def error(msg: str) -> None:
 			if not quiet:
 				log.critical(msg)
-			return
 
 		filenameOrig = filename
-		filenameNoExt, filename, ext, compression = splitFilenameExt(filename)
+		_, filename, ext, compression = splitFilenameExt(filename)
 
 		plugin = None
 		if format:
@@ -238,42 +237,63 @@ class PluginManager(object):
 			compression = ""
 			filename = filenameOrig
 
-		return filename, plugin.name, compression
+		return DetectedFormat(filename, plugin.name, compression)
 
 	@classmethod
+	def _outputPluginByFormat(
+		cls: "type[PluginManager]",
+		format: str,
+	) -> "tuple[PluginProp | None, str]":
+		if not format:
+			return None, ""
+		plugin = cls.plugins.get(format, None)
+		if not plugin:
+			return None, f"Invalid format {format}"
+		if not plugin.canWrite:
+			return None, f"plugin {plugin.name} does not support writing"
+		return plugin, ""
+
+	# TODO: breaking change:
+	# return "tuple[DetectedFormat | None, str]"
+	# where the str is error
+	# and remove `quiet` argument, and local `error` function
+	@classmethod
 	def detectOutputFormat(
-		cls: "type",
+		cls: "type[PluginManager]",
 		filename: str = "",
 		format: str = "",
 		inputFilename: str = "",
-		quiet: bool = False,
+		quiet: bool = False,  # TODO: remove
 		addExt: bool = False,
-	) -> "tuple[str, str, str] | None":
-		"""
-		returns (filename, format, compression) or None
-		"""
+	) -> "DetectedFormat | None":
 		from os.path import splitext
+
+		# Ugh, mymy
+		# https://github.com/python/mypy/issues/6549
+		# > Mypy assumes that the return value of methods that return None should not
+		# > be used. This helps guard against mistakes where you accidentally use the
+		# > return value of such a method (e.g., saying new_list = old_list.sort()).
+		# > I don't think there's a bug here.
+		# Sorry, but that's not the job of a type checker at all!
 
 		def error(msg: str) -> None:
 			if not quiet:
 				log.critical(msg)
-			return
 
-		plugin = None
-		if format:
-			plugin = cls.plugins.get(format)
-			if not plugin:
-				return error(f"Invalid format {format}")
-			if not plugin.canWrite:
-				return error(f"plugin {plugin.name} does not support writing")
+		plugin, err = cls._outputPluginByFormat(format)
+		if err:
+			return error(err)  # type: ignore
 
 		if not filename:
+			# FIXME: not covered in tests
 			if not inputFilename:
-				return error(f"Invalid filename {filename!r}")
+				return error(f"Invalid filename {filename!r}")  # type: ignore
 			if not plugin:
-				return error("No filename nor format is given for output file")
+				return error(
+					"No filename nor format is given for output file",
+				)  # type: ignore
 			filename = splitext(inputFilename)[0] + plugin.ext
-			return filename, plugin.name, ""
+			return DetectedFormat(filename, plugin.name, "")
 
 		filenameOrig = filename
 		filenameNoExt, filename, ext, compression = splitFilenameExt(filename)
@@ -284,10 +304,12 @@ class PluginManager(object):
 				plugin = cls._findPlugin(filename)
 
 		if not plugin:
-			return error("Unable to detect output format!")
+			return error("Unable to detect output format!")  # type: ignore
 
 		if not plugin.canWrite:
-			return error(f"plugin {plugin.name} does not support writing")
+			return error(
+				f"plugin {plugin.name} does not support writing",
+			)  # type: ignore
 
 		if compression in getattr(plugin.writerClass, "compressions", []):
 			compression = ""
@@ -303,19 +325,19 @@ class PluginManager(object):
 			if not ext and plugin.ext:
 				filename += plugin.ext
 
-		return filename, plugin.name, compression
+		return DetectedFormat(filename, plugin.name, compression)
 
 	@classmethod
 	def init(
-		cls: "type",
+		cls: "type[PluginManager]",
 		usePluginsJson: bool = True,
 		skipDisabledPlugins: bool = True,
 	) -> None:
 		"""
-		init() must be called only once, so make sure you put it in the
-		right place. Probably in the top of your program's main function or module.
+		Initialize the glossary class (not an insatnce).
+		Must be called only once, so make sure you put it in the right place.
+		Probably in the top of your program's main function or module.
 		"""
-
 		cls.readFormats = []
 		cls.writeFormats = []
 		pluginsJsonPath = join(dataDir, "plugins-meta", "index.json")

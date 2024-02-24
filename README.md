@@ -40,7 +40,7 @@ Android Termux - interactive command-line interface
 | [Aard 2 (slob)](./doc/p/aard2_slob.md)                  |  🔢  |      .slob      |  ✔   |   ✔   |
 | [ABBYY Lingvo DSL](./doc/p/dsl.md)                      |  📝  |      .dsl       |  ✔   |       |
 | [Almaany.com](./doc/p/almaany.md) (SQLite3, Arabic)     |  🔢  |       .db       |  ✔   |       |
-| [AppleDict Binary](./doc/p/appledict_bin.md)            |  🔢  |   .dictionary   |  ✔   |   ❌   |
+| [AppleDict Binary](./doc/p/appledict_bin.md)            |  📁  |   .dictionary   |  ✔   |   ❌   |
 | [AppleDict Source](./doc/p/appledict.md)                |  📁  |                 |      |   ✔   |
 | [Babylon BGL](./doc/p/babylon_bgl.md)                   |  🔢  |      .bgl       |  ✔   |   ❌   |
 | [CC-CEDICT](./doc/p/cc_cedict.md) (Chinese)             |  📝  |                 |  ✔   |   ❌   |
@@ -65,10 +65,12 @@ Android Termux - interactive command-line interface
 | [Lingoes Source](./doc/p/lingoes_ldf.md)                |  📝  |      .ldf       |  ✔   |   ✔   |
 | [Mobipocket E-Book](./doc/p/mobi.md)                    |  🔢  |      .mobi      |  ❌   |   ✔   |
 | [Octopus MDict](./doc/p/octopus_mdict.md)               |  🔢  |      .mdx       |  ✔   |   ❌   |
+| [QuickDic version 6](./doc/p/quickdic6.md)              |  📁  |     .quickdic   |  ✔   |   ✔   |
 | [SQL](./doc/p/sql.md)                                   |  📝  |      .sql       |  ❌   |   ✔   |
 | [StarDict](./doc/p/stardict.md)                         |  📁  |     (📝.ifo)     |  ✔   |   ✔   |
 | [StarDict Textual File](./doc/p/stardict_textual.md)    |  📝  |     (.xml)      |  ✔   |   ✔   |
 | [Tabfile](./doc/p/tabfile.md)                           |  📝  |   .txt, .tab    |  ✔   |   ✔   |
+| [Wiktextract](./doc/p/wiktextract.md)                   |  📝  |     .jsonl      |  ✔   |       |
 | [Wordset.org](./doc/p/wordset.md)                       |  📁  |                 |  ✔   |       |
 | [XDXF](./doc/p/xdxf.md)                                 |  📝  |      .xdxf      |  ✔   |   ❌   |
 | [Yomichan](./doc/p/yomichan.md)                         |  📦  |     (.zip)      |      |   ✔   |
@@ -89,7 +91,7 @@ So you need to select the format (with UI or `--read-format` flag).
 
 ## Requirements
 
-PyGlossary requires **Python 3.9 or higher**, and works in practically all
+PyGlossary requires **Python 3.10 or higher**, and works in practically all
 modern operating systems. While primarily designed for *GNU/Linux*, it works
 on *Windows*, *Mac OS X* and other Unix-based operating systems as well.
 
@@ -310,7 +312,6 @@ glos.convert(ConvertArgs(
 
 You may look at docstring of `Glossary.convert` for full list of keyword arguments.
 
-
 If you need to add entries inside your Python program (rather than converting one glossary into another), then you use `write` instead of `convert`, here is an example:
 
 ```python
@@ -339,7 +340,6 @@ glos.write("test.ifo", format="Stardict")
 **Note:** `addEntryObj` is renamed to `addEntry` in `pyglossary.glossary_v2`.
 
 **Note:** Switching to `glossary_v2` is optional and recommended.
-
 
 And if you need to read a glossary from file into a `Glossary` object in RAM (without immediately converting it), you can use `glos.read(filename, format=inputFormat)`. Be wary of RAM usage in this case.
 

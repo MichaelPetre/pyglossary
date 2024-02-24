@@ -1,53 +1,69 @@
 # -*- coding: utf-8 -*-
 
 import html
-import typing
+from collections.abc import Callable, Iterator
 from operator import itemgetter
-from typing import TYPE_CHECKING, Callable, Iterator, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
 	import sqlite3
 
-	from lxml.etree import _Element as Element
-
-	from pyglossary.lxml_types import T_htmlfile
+	from pyglossary.glossary_types import EntryType, GlossaryType
+	from pyglossary.lxml_types import Element, T_htmlfile
 
 
 from pyglossary.core import log
-from pyglossary.glossary_types import EntryType, GlossaryType
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+]
 
 enable = True
 lname = "dict_cc"
-format = 'Dictcc'
-description = 'Dict.cc (SQLite3)'
+format = "Dictcc"
+description = "Dict.cc (SQLite3)"
 extensions = ()
 extensionCreate = ".db"
+singleFile = True
 kind = "binary"
 wiki = "https://en.wikipedia.org/wiki/Dict.cc"
 website = (
 	"https://play.google.com/store/apps/details?id=cc.dict.dictcc",
 	"dict.cc dictionary - Google Play",
 )
+optionsProp = {}
 
 
-class Reader(object):
-	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
+class Reader:
+	def __init__(self, glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._clear()
 
-	def _clear(self: "typing.Self") -> None:
-		self._filename = ''
+	def _clear(self) -> None:
+		self._filename = ""
 		self._con: "sqlite3.Connection | None" = None
 		self._cur: "sqlite3.Cursor | None" = None
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		from sqlite3 import connect
+
 		self._filename = filename
 		self._con = connect(filename)
 		self._cur = self._con.cursor()
 		self._glos.setDefaultDefiFormat("h")
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		if self._cur is None:
 			raise ValueError("cur is None")
 		self._cur.execute(
@@ -56,18 +72,18 @@ class Reader(object):
 		return self._cur.fetchone()[0]
 
 	def makeList(
-		self: "typing.Self",
+		self,
 		hf: "T_htmlfile",
 		input_elements: "list[Element]",
 		processor: "Callable",
 		single_prefix: str = "",
 		skip_single: bool = True,
 	) -> None:
-		""" Wrap elements into <ol> if more than one element """
-		if len(input_elements) == 0:
+		"""Wrap elements into <ol> if more than one element."""
+		if not input_elements:
 			return
 
-		if len(input_elements) == 1:
+		if skip_single and len(input_elements) == 1:
 			hf.write(single_prefix)
 			processor(hf, input_elements[0])
 			return
@@ -78,18 +94,18 @@ class Reader(object):
 					processor(hf, el)
 
 	def makeGroupsList(
-		self: "typing.Self",
+		self,
 		hf: "T_htmlfile",
 		groups: "list[tuple[str, str]]",
 		processor: "Callable[[T_htmlfile, tuple[str, str]], None]",
 		single_prefix: str = "",
 		skip_single: bool = True,
 	) -> None:
-		""" Wrap elements into <ol> if more than one element """
-		if len(groups) == 0:
+		"""Wrap elements into <ol> if more than one element."""
+		if not groups:
 			return
 
-		if len(groups) == 1:
+		if skip_single and len(groups) == 1:
 			hf.write(single_prefix)
 			processor(hf, groups[0])
 			return
@@ -100,11 +116,12 @@ class Reader(object):
 					processor(hf, el)
 
 	def writeSense(
-		self: "typing.Self",
+		self,
 		hf: "T_htmlfile",
 		row: "tuple[str, str]",
 	) -> None:
 		from lxml import etree as ET
+
 		trans, entry_type = row
 		if entry_type:
 			with hf.element("i"):
@@ -117,11 +134,11 @@ class Reader(object):
 			hf.write(repr(trans) + " ")
 		else:
 			with hf.element("big"):
-				with hf.element("a", href=f'bword://{trans}'):
+				with hf.element("a", href=f"bword://{trans}"):
 					hf.write("⏎")
 
 	def iterRows(
-		self: "typing.Self",
+		self,
 		column1: str,
 		column2: str,
 	) -> "Iterator[tuple[str, str, str]]":
@@ -144,7 +161,7 @@ class Reader(object):
 				log.error(f"html.unescape({term2!r}) -> {e}")
 			yield term1, term2, row[2]
 
-	def parseGender(self: "typing.Self", headword: str) -> "tuple[str | None, str]":
+	def parseGender(self, headword: str) -> "tuple[str | None, str]":
 		# {m}	masc	masculine	German: maskulin
 		# {f}	fem 	feminine	German: feminin
 		# {n}	neut	neutral		German: neutral
@@ -167,11 +184,11 @@ class Reader(object):
 		else:
 			log.warning(f"invalid gender {g!r}")
 			return None, headword
-		headword = headword[:i] + headword[i + 4:]
+		headword = headword[:i] + headword[i + 4 :]
 		return gender, headword
 
 	def _iterOneDirection(
-		self: "typing.Self",
+		self,
 		column1: str,
 		column2: str,
 	) -> "Iterator[EntryType]":
@@ -187,8 +204,7 @@ class Reader(object):
 		):
 			headword = html.unescape(headword)
 			groups: "list[tuple[str, str]]" = [
-				(term2, entry_type)
-				for _, term2, entry_type in groupsOrig
+				(term2, entry_type) for _, term2, entry_type in groupsOrig
 			]
 			f = BytesIO()
 			gender, headword = self.parseGender(headword)
@@ -206,11 +222,11 @@ class Reader(object):
 			defi = f.getvalue().decode("utf-8")
 			yield glos.newEntry(headword, defi, defiFormat="h")
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType]":
 		yield from self._iterOneDirection("term1", "term2")
 		yield from self._iterOneDirection("term2", "term1")
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		if self._cur:
 			self._cur.close()
 		if self._con:

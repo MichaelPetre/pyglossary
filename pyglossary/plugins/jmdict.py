@@ -2,17 +2,15 @@
 
 import os
 import re
-import typing
+import unicodedata
 from io import BytesIO
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
 	import io
-	from typing import Callable, Iterator
+	from collections.abc import Callable, Iterator
 
-	from lxml.etree import _Element as Element
-
-	from pyglossary.lxml_types import T_htmlfile
+	from pyglossary.lxml_types import Element, T_htmlfile
 
 from pyglossary.compression import (
 	compressionOpen,
@@ -23,11 +21,28 @@ from pyglossary.glossary_types import (
 	EntryType,
 	GlossaryType,
 )
+from pyglossary.io_utils import nullBinaryIO
 from pyglossary.option import (
+	BoolOption,
 	IntOption,
 	Option,
 	StrOption,
 )
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+]
 
 enable = True
 lname = "jmdict"
@@ -49,10 +64,13 @@ optionsProp: "dict[str, Option]" = {
 	"example_padding": IntOption(
 		comment="Padding for examples (in px)",
 	),
+	"translitation": BoolOption(
+		comment="Add translitation (romaji) of keywords",
+	),
 }
 
 
-class Reader(object):
+class Reader:
 	compressions = stdCompressions
 	depends = {
 		"lxml": "lxml",
@@ -61,6 +79,7 @@ class Reader(object):
 	_example_padding: int = 10
 	_example_color: str = ""
 	# _example_color: str = "#008FE1"
+	_translitation: bool = False
 
 	tagStyle = (
 		"color:white;"
@@ -71,26 +90,26 @@ class Reader(object):
 		# 0.5ex ~= 0.3em, but "ex" is recommended
 	)
 
+	gikun_key = "gikun (meaning as reading) or jukujikun (special kanji reading)"
 	re_inf_mapping = {
-		"gikun (meaning as reading) or jukujikun (special kanji reading)":
-			"gikun/jukujikun",
+		gikun_key: "gikun/jukujikun",
 		"out-dated or obsolete kana usage": "obsolete",  # outdated/obsolete
 		"word containing irregular kana usage": "irregular",
 	}
 
 	def makeList(
-		self: "typing.Self",
+		self,
 		hf: "T_htmlfile",
 		input_objects: "list[Element]",
 		processor: "Callable",
 		single_prefix: str = "",
 		skip_single: bool = True,
 	) -> None:
-		""" Wrap elements into <ol> if more than one element """
-		if len(input_objects) == 0:
+		"""Wrap elements into <ol> if more than one element."""
+		if not input_objects:
 			return
 
-		if len(input_objects) == 1:
+		if skip_single and len(input_objects) == 1:
 			hf.write(single_prefix)
 			processor(hf, input_objects[0])
 			return
@@ -100,8 +119,9 @@ class Reader(object):
 				with hf.element("li"):
 					processor(hf, el)
 
+	# TODO: break it down
 	def writeSense(
-		self: "typing.Self",
+		self,
 		hf: "T_htmlfile",
 		sense: "Element",
 	) -> None:
@@ -120,11 +140,7 @@ class Reader(object):
 				hf.write(f"{desc.capitalize()}")
 			hf.write(br())
 
-		glossList = [
-			elem.text.strip()
-			for elem in sense.findall("gloss")
-			if elem.text
-		]
+		glossList = [elem.text.strip() for elem in sense.findall("gloss") if elem.text]
 		if glossList:
 			for i, gloss in enumerate(glossList):
 				if i > 0:
@@ -190,10 +206,13 @@ class Reader(object):
 
 		examples = sense.findall("example")
 		if examples:
-			with hf.element("div", attrib={
-				"class": "example",
-				"style": f"padding: {self._example_padding}px 0px;",
-			}):
+			with hf.element(
+				"div",
+				attrib={
+					"class": "example",
+					"style": f"padding: {self._example_padding}px 0px;",
+				},
+			):
 				hf.write("Examples:")
 				with hf.element("ul"):
 					for i, elem in enumerate(examples):
@@ -223,21 +242,26 @@ class Reader(object):
 									hf.write(br())
 									hf.write(sent)
 
+	# TODO: break it down
 	def getEntryByElem(
-		self: "typing.Self",
+		self,
 		entry: "Element",
 	) -> "EntryType":
 		from lxml import etree as ET
+
 		glos = self._glos
 		keywords = []
 		f = BytesIO()
+		translit = self._translitation
 
 		def br() -> "Element":
 			return ET.Element("br")
 
 		with ET.htmlfile(f, encoding="utf-8") as hf:
 			kebList: "list[str]" = []
-			rebList: "list[tuple[str, list[str]]]" = []
+			rebList: "list[str]" = []
+			kebDisplayList: "list[str]" = []
+			rebDisplayList: "list[tuple[str, list[str]]]" = []
 			with hf.element("div"):
 				for k_ele in entry.findall("k_ele"):
 					keb = k_ele.find("keb")
@@ -245,8 +269,21 @@ class Reader(object):
 						continue
 					if not keb.text:
 						continue
-					kebList.append(keb.text)
-					keywords.append(keb.text)
+					keb_text = keb.text
+					keb_text_norm = unicodedata.normalize("NFKC", keb_text)
+					keywords.append(keb_text_norm)
+					if keb_text != keb_text_norm:
+						keywords.append(keb_text)
+					kebList.append(keb_text)
+					keb_display = keb_text
+					if translit:
+						import romkan  # type: ignore
+
+						t_keb = romkan.to_roma(keb_text)
+						if t_keb and t_keb.isascii():
+							keywords.append(t_keb)
+							keb_display += f" ({t_keb})"
+					kebDisplayList.append(keb_display)
 					# for elem in k_ele.findall("ke_pri"):
 					# 	log.info(elem.text)
 
@@ -264,8 +301,18 @@ class Reader(object):
 						props.append(
 							self.re_inf_mapping.get(inf.text, inf.text),
 						)
-					rebList.append((reb.text, props))
 					keywords.append(reb.text)
+					reb_text = reb.text
+					rebList.append(reb_text)
+					reb_display = reb_text
+					if translit:
+						import romkan
+
+						t_reb = romkan.to_roma(reb.text)
+						if t_reb and t_reb.isascii():
+							keywords.append(t_reb)
+							reb_display += f" ({t_reb})"
+					rebDisplayList.append((reb_display, props))
 					# for elem in r_ele.findall("re_pri"):
 					# 	log.info(elem.text)
 
@@ -275,20 +322,20 @@ class Reader(object):
 				# except for scanning and indexing all words once
 				# and then starting over and fixing/optimizing links
 				for s_keb in kebList:
-					for s_reb, _ in rebList:
-						keywords.append(f"{s_keb}・{s_reb}")
+					for s_reb in rebList:
+						keywords.append(f"{s_keb}・{s_reb}")  # noqa: PERF401
 
-				if kebList:
-					with hf.element(glos.titleTag(kebList[0])):
-						for i, s_keb in enumerate(kebList):
+				if kebDisplayList:
+					with hf.element(glos.titleTag(kebDisplayList[0])):
+						for i, s_keb in enumerate(kebDisplayList):
 							if i > 0:
 								with hf.element("font", color="red"):
 									hf.write(" | ")
 							hf.write(s_keb)
 					hf.write(br())
 
-				if rebList:
-					for i, (s_reb, props) in enumerate(rebList):
+				if rebDisplayList:
+					for i, (s_reb, props) in enumerate(rebDisplayList):
 						if i > 0:
 							with hf.element("font", color="red"):
 								hf.write(" | ")
@@ -310,8 +357,6 @@ class Reader(object):
 
 		defi = f.getvalue().decode("utf-8")
 		_file = self._file
-		if _file is None:
-			raise RuntimeError("_file is None")
 		byteProgress = (_file.tell(), self._fileSize)
 		return self._glos.newEntry(
 			keywords,
@@ -321,44 +366,49 @@ class Reader(object):
 		)
 
 	def tostring(
-		self: "typing.Self",
+		self,
 		elem: "Element",
 	) -> str:
 		from lxml import etree as ET
-		return ET.tostring(
-			elem,
-			method="html",
-			pretty_print=True,
-		).decode("utf-8").strip()
 
-	def setCreationTime(self: "typing.Self", header: str) -> None:
+		return (
+			ET.tostring(
+				elem,
+				method="html",
+				pretty_print=True,
+			)
+			.decode("utf-8")
+			.strip()
+		)
+
+	def setCreationTime(self, header: str) -> None:
 		m = re.search("JMdict created: ([0-9]{4}-[0-9]{2}-[0-9]{2})", header)
 		if m is None:
 			return
 		self._glos.setInfo("creationTime", m.group(1))
 
-	def setMetadata(self: "typing.Self", header: str) -> None:
+	def setMetadata(self, header: str) -> None:
 		# TODO: self.set_info("edition", ...)
 		self.setCreationTime(header)
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._wordCount = 0
 		self._filename = ""
-		self._file: "io.IOBase | None" = None
+		self._file: "io.IOBase" = nullBinaryIO
 		self._fileSize = 0
 		self._link_number_postfix = re.compile("・[0-9]+$")
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return self._wordCount
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		if self._file:
 			self._file.close()
-			self._file = None
+			self._file = nullBinaryIO
 
 	def open(
-		self: "typing.Self",
+		self,
 		filename: str,
 	) -> None:
 		try:
@@ -388,7 +438,7 @@ class Reader(object):
 
 		self._file = compressionOpen(filename, mode="rb")
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType]":
 		from lxml import etree as ET
 
 		context = ET.iterparse(  # type: ignore # noqa: PGH003
@@ -396,9 +446,13 @@ class Reader(object):
 			events=("end",),
 			tag="entry",
 		)
-		for _, elem in context:
+		for _, _elem in context:
+			elem = cast("Element", _elem)
 			yield self.getEntryByElem(elem)
 			# clean up preceding siblings to save memory
 			# this reduces memory usage from ~64 MB to ~30 MB
+			parent = elem.getparent()
+			if parent is None:
+				continue
 			while elem.getprevious() is not None:
-				del elem.getparent()[0]
+				del parent[0]

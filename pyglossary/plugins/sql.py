@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import io
-import typing
-from typing import Generator, List
+from collections.abc import Generator
+from typing import TYPE_CHECKING
 
-from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.option import (
 	BoolOption,
 	EncodingOption,
@@ -12,6 +10,26 @@ from pyglossary.option import (
 	NewlineOption,
 	Option,
 )
+
+if TYPE_CHECKING:
+	import io
+
+	from pyglossary.glossary_types import EntryType, GlossaryType
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
 
 enable = True
 lname = "sql"
@@ -32,30 +50,30 @@ optionsProp: "dict[str, Option]" = {
 }
 
 
-class Writer(object):
+class Writer:
 	_encoding: str = "utf-8"
-	_info_keys: "List | None" = None
+	_info_keys: "list | None" = None
 	_add_extra_info: bool = True
 	_newline: str = "<br>"
 	_transaction: bool = False
 
-	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		self._glos = glos
 		self._filename = ""
 		self._file: "io.IOBase | None" = None
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		self._filename = ""
 		if self._file:
 			self._file.close()
 			self._file = None
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		self._filename = filename
-		self._file = open(filename, "wt", encoding=self._encoding)
+		self._file = open(filename, "w", encoding=self._encoding)
 		self._writeInfo()
 
-	def _writeInfo(self: "typing.Self") -> None:
+	def _writeInfo(self) -> None:
 		fileObj = self._file
 		if fileObj is None:
 			raise ValueError("fileObj is None")
@@ -67,12 +85,13 @@ class Writer(object):
 
 		for key in info_keys:
 			value = glos.getInfo(key)
-			value = value\
-				.replace("\'", "\'\'")\
-				.replace("\x00", "")\
-				.replace("\r", "")\
+			value = (
+				value.replace("'", "''")
+				.replace("\x00", "")
+				.replace("\r", "")
 				.replace("\n", newline)
-			infoValues.append(f"\'{value}\'")
+			)
+			infoValues.append(f"'{value}'")
 			infoDefLine += f"{key} char({len(value)}), "
 
 		infoDefLine = infoDefLine[:-2] + ");"
@@ -81,13 +100,17 @@ class Writer(object):
 		if self._add_extra_info:
 			fileObj.write(
 				"CREATE TABLE dbinfo_extra ("
-				"\'id\' INTEGER PRIMARY KEY NOT NULL, "
-				"\'name\' TEXT UNIQUE, \'value\' TEXT);\n",
+				"'id' INTEGER PRIMARY KEY NOT NULL, "
+				"'name' TEXT UNIQUE, 'value' TEXT);\n",
 			)
 
 		fileObj.write(
-			"CREATE TABLE word (\'id\' INTEGER PRIMARY KEY NOT NULL, "
-			"\'w\' TEXT, \'m\' TEXT);\n",
+			"CREATE TABLE word ('id' INTEGER PRIMARY KEY NOT NULL, "
+			"'w' TEXT, 'm' TEXT);\n",
+		)
+		fileObj.write(
+			"CREATE TABLE alt ('id' INTEGER NOT NULL, "
+			"'w' TEXT);\n",
 		)
 
 		if self._transaction:
@@ -97,14 +120,14 @@ class Writer(object):
 		if self._add_extra_info:
 			extraInfo = glos.getExtraInfos(info_keys)
 			for index, (key, value) in enumerate(extraInfo.items()):
-				key = key.replace("\'", "\'\'")
-				value = value.replace("\'", "\'\'")
+				key = key.replace("'", "''")
+				value = value.replace("'", "''")
 				fileObj.write(
-					f"INSERT INTO dbinfo_extra VALUES({index+1}, "
-					f"\'{key}\', \'{value}\');\n",
+					f"INSERT INTO dbinfo_extra VALUES({index + 1}, "
+					f"'{key}', '{value}');\n",
 				)
 
-	def _getInfoKeys(self: "typing.Self") -> "list[str]":
+	def _getInfoKeys(self) -> "list[str]":
 		info_keys = self._info_keys
 		if info_keys:
 			return info_keys
@@ -120,14 +143,17 @@ class Writer(object):
 			"description",
 		]
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		newline = self._newline
 
 		fileObj = self._file
 		if fileObj is None:
 			raise ValueError("fileObj is None")
 
-		i = 0
+		def fixStr(word: str) -> str:
+			return word.replace("'", "''").replace("\r", "").replace("\n", newline)
+
+		_id = 1
 		while True:
 			entry = yield
 			if entry is None:
@@ -135,16 +161,22 @@ class Writer(object):
 			if entry.isData():
 				# FIXME
 				continue
-			word = entry.s_word
-			defi = entry.defi
-			word = word.replace("\'", "\'\'")\
-				.replace("\r", "").replace("\n", newline)
-			defi = defi.replace("\'", "\'\'")\
-				.replace("\r", "").replace("\n", newline)
+			words = entry.l_word
+			word = fixStr(words[0])
+			defi = fixStr(entry.defi)
 			fileObj.write(
-				f"INSERT INTO word VALUES({i+1}, \'{word}\', \'{defi}\');\n",
+				f"INSERT INTO word VALUES({_id}, '{word}', '{defi}');\n",
 			)
-			i += 1
+			for alt in words[1:]:
+				alt = fixStr(alt)
+				fileObj.write(
+					f"INSERT INTO alt VALUES({_id}, '{alt}');\n",
+				)
+			_id += 1
+
 		if self._transaction:
 			fileObj.write("END TRANSACTION;\n")
+
 		fileObj.write("CREATE INDEX ix_word_w ON word(w COLLATE NOCASE);\n")
+		fileObj.write("CREATE INDEX ix_alt_id ON alt(id COLLATE NOCASE);\n")
+		fileObj.write("CREATE INDEX ix_alt_w ON alt(w COLLATE NOCASE);\n")

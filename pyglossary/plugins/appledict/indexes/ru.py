@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # appledict/indexes/ru.py
 #
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016 ivan tkachenko me@ratijas.tk
 #
 # This program is a free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,22 +14,25 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-"""
-Russian indexes based on pymorphy.
-"""
+"""Russian indexes based on pymorphy."""
 
-from typing import Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from collections.abc import Sequence
 
 from pyglossary.core import log, pip
 
 from . import languages
 
 try:
-	import pymorphy2
+	import pymorphy2  # type: ignore
 except ImportError:
-	log.error(f"""module pymorphy2 is required to build extended Russian indexes.
+	log.error(
+		f"""module pymorphy2 is required to build extended Russian indexes.
 You can download it here: http://pymorphy2.readthedocs.org/en/latest/.
-Or by running: {pip} install pymorphy2""")
+Or by running: {pip} install pymorphy2""",
+	)
 	raise
 
 morphy = pymorphy2.MorphAnalyzer()
@@ -37,7 +40,7 @@ morphy = pymorphy2.MorphAnalyzer()
 
 def ru(titles: "Sequence[str]", _: str) -> "set[str]":
 	"""
-	gives a set of all declines, cases and other forms of word `title`.
+	Give a set of all declines, cases and other forms of word `title`.
 	note that it works only if title is one word.
 	"""
 	indexes: "set[str]" = set()
@@ -62,11 +65,9 @@ def _ru(title: str, a: "set[str]", a_norm: "set[str]") -> None:
 
 	# decline only one-word titles
 	if len(title.split()) == 1:
-
 		normal_forms = morphy.parse(title)
 
 		if len(normal_forms) > 0:
-
 			# forms of most probable match
 			normal_form = normal_forms[0]
 

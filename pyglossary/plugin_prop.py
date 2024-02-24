@@ -18,13 +18,13 @@
 # If not, see <http://www.gnu.org/licenses/gpl.txt>.
 
 import logging
-import typing
 from collections import OrderedDict as odict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 	import pathlib
-	from typing import Any, Callable
+	from collections.abc import Callable
+	from typing import Any
 
 	from .flags import StrWithDesc
 
@@ -36,7 +36,9 @@ from .flags import (
 )
 from .option import Option, optionFromDict
 
-log: core.MyLogger = logging.getLogger("pyglossary")
+__all__ = ["PluginProp"]
+
+log = logging.getLogger("pyglossary")
 
 
 def optionsPropFromDict(
@@ -59,36 +61,39 @@ def sortOnWriteFromStr(sortOnWriteStr: "str | None") -> "StrWithDesc":
 	return flagsByName[sortOnWriteStr]
 
 
-class PluginProp(object):
+class PluginCheckError(Exception):
+	pass
+
+
+class PluginProp:
 	__slots__ = [
-		"_mod",
 		"_Reader",
 		"_ReaderLoaded",
 		"_Writer",
 		"_WriterLoaded",
-
-		"_moduleName",
-		"_modulePath",
-		"_enable",
-		"_lname",
-		"_name",
-		"_description",
-		"_extensions",
-		"_extensionCreate",
-		"_singleFile",
-		"_optionsProp",
-		"_sortOnWrite",
-		"_sortKeyName",
 		"_canRead",
 		"_canWrite",
-		"_readOptions",
-		"_writeOptions",
+		"_description",
+		"_enable",
+		"_extensionCreate",
+		"_extensions",
+		"_lname",
+		"_mod",
+		"_moduleName",
+		"_modulePath",
+		"_name",
+		"_optionsProp",
 		"_readCompressions",
 		"_readDepends",
+		"_readOptions",
+		"_singleFile",
+		"_sortKeyName",
+		"_sortOnWrite",
 		"_writeDepends",
+		"_writeOptions",
 	]
 
-	def __init__(self: "typing.Self") -> None:
+	def __init__(self) -> None:
 		self._mod: "Any"
 		self._Reader: "Any"
 		self._ReaderLoaded: bool
@@ -114,7 +119,6 @@ class PluginProp(object):
 		self._readCompressions: "list[str]"
 		self._readDepends: "dict[str, str]"
 		self._writeDepends: "dict[str, str]"
-
 
 	@classmethod
 	def fromDict(
@@ -163,7 +167,7 @@ class PluginProp(object):
 		self._moduleName = mod.__name__
 		self._modulePath = mod.__file__
 		if self._modulePath.endswith("__init__.py"):
-			self._modulePath = self._modulePath[:-len("/__init__.py")]
+			self._modulePath = self._modulePath[: -len("/__init__.py")]
 		elif self._modulePath.endswith(".py"):
 			self._modulePath = self._modulePath[:-3]
 
@@ -185,17 +189,17 @@ class PluginProp(object):
 		self._readDepends = None
 		self._writeDepends = None
 
-		if log.isDebug():
-			self.checkModule()
+		if core.isDebug():
+			self.checkModule(mod)
 
 		return self
 
 	@property
-	def enable(self: "typing.Self") -> bool:
+	def enable(self) -> bool:
 		return self._enable
 
 	@property
-	def module(self: "typing.Self") -> "Any":
+	def module(self) -> "Any":
 		if self._mod is not None:
 			return self._mod
 		moduleName = self._moduleName
@@ -214,91 +218,96 @@ class PluginProp(object):
 		except Exception:
 			log.exception(f"Error while importing plugin {moduleName}")
 			return None
-		else:
-			return _mod
+
+		# self._mod = _mod
+		if core.isDebug():
+			self.checkModule(_mod)
+
+		return _mod
 
 	@property
-	def lname(self: "typing.Self") -> str:
+	def lname(self) -> str:
 		return self._lname
 
 	@property
-	def name(self: "typing.Self") -> str:
+	def name(self) -> str:
 		return self._name
 
 	@property
-	def description(self: "typing.Self") -> str:
+	def description(self) -> str:
 		return self._description
 
 	@property
-	def extensions(self: "typing.Self") -> "list[str]":
+	def extensions(self) -> "list[str]":
 		return self._extensions
 
 	@property
-	def ext(self: "typing.Self") -> str:
+	def ext(self) -> str:
 		extensions = self.extensions
 		if extensions:
 			return extensions[0]
 		return ""
 
 	@property
-	def extensionCreate(self: "typing.Self") -> str:
+	def extensionCreate(self) -> str:
 		return self._extensionCreate
 
 	@property
-	def singleFile(self: "typing.Self") -> bool:
+	def singleFile(self) -> bool:
 		return self._singleFile
 
 	@property
-	def optionsProp(self: "typing.Self") -> "dict[str, Option]":
+	def optionsProp(self) -> "dict[str, Option]":
 		return self._optionsProp
 
 	@property
-	def sortOnWrite(self: "typing.Self") -> YesNoAlwaysNever:
+	def sortOnWrite(self) -> YesNoAlwaysNever:
 		return self._sortOnWrite
 
 	@property
-	def sortKeyName(self: "typing.Self") -> "str | None":
+	def sortKeyName(self) -> "str | None":
 		return self._sortKeyName
 
 	@property
-	def path(self: "typing.Self") -> "pathlib.Path":
+	def path(self) -> "pathlib.Path":
 		from pathlib import Path
+
 		return Path(self._modulePath)
 
 	@property
-	def readerClass(self: "typing.Self") -> "Any | None":
+	def readerClass(self) -> "Any | None":
 		if self._ReaderLoaded:
 			return self._Reader
 		cls = getattr(self.module, "Reader", None)
 		self._Reader = cls
 		self._ReaderLoaded = True
-		if cls is not None and log.isDebug():
+		if cls is not None and core.isDebug():
 			self.checkReaderClass()
 		return cls
 
 	@property
-	def writerClass(self: "typing.Self") -> "Any | None":
+	def writerClass(self) -> "Any | None":
 		if self._WriterLoaded:
 			return self._Writer
 		cls = getattr(self.module, "Writer", None)
 		self._Writer = cls
 		self._WriterLoaded = True
-		if cls is not None and log.isDebug():
+		if cls is not None and core.isDebug():
 			self.checkWriterClass()
 		return cls
 
 	@property
-	def canRead(self: "typing.Self") -> bool:
+	def canRead(self) -> bool:
 		return self._canRead
 
 	@property
-	def canWrite(self: "typing.Self") -> bool:
+	def canWrite(self) -> bool:
 		return self._canWrite
 
-	def getOptionAttrNamesFromClass(self: "typing.Self", rwclass: "type") -> "list[str]":
+	def getOptionAttrNamesFromClass(self, rwclass: "type") -> "list[str]":
 		nameList = []
 
-		for cls in rwclass.__bases__ + (rwclass,):
+		for cls in (*rwclass.__bases__, rwclass):
 			for _name in cls.__dict__:
 				if not _name.startswith("_") or _name.startswith("__"):
 					# and _name not in ("_open",)
@@ -311,7 +320,7 @@ class PluginProp(object):
 
 		return nameList
 
-	def getOptionsFromClass(self: "typing.Self", rwclass: "type") -> "dict[str, Any]":
+	def getOptionsFromClass(self, rwclass: "type") -> "dict[str, Any]":
 		optionsProp = self.optionsProp
 		options = odict()
 		if rwclass is None:
@@ -326,7 +335,10 @@ class PluginProp(object):
 				continue
 			prop = optionsProp[name]
 			if prop.disabled:
-				log.trace(f"skipping disabled option {name} in {self.name} plugin")
+				core.trace(
+					log,
+					f"skipping disabled option {name} in {self.name} plugin",
+				)
 				continue
 			if not prop.validate(default):
 				log.warning(
@@ -337,51 +349,51 @@ class PluginProp(object):
 
 		return options
 
-	def getReadOptions(self: "typing.Self") -> "dict[str, Any]":
+	def getReadOptions(self) -> "dict[str, Any]":
 		if self._readOptions is None:
 			self._readOptions = self.getOptionsFromClass(self.readerClass)
 		return self._readOptions
 
-	def getWriteOptions(self: "typing.Self") -> "dict[str, Any]":
+	def getWriteOptions(self) -> "dict[str, Any]":
 		if self._writeOptions is None:
 			self._writeOptions = self.getOptionsFromClass(self.writerClass)
 		return self._writeOptions
 
 	@property
-	def readCompressions(self: "typing.Self") -> "list[str]":
+	def readCompressions(self) -> "list[str]":
 		if self._readCompressions is None:
 			self._readCompressions = getattr(self.readerClass, "compressions", [])
 		return self._readCompressions
 
 	@property
-	def readDepends(self: "typing.Self") -> "dict[str, str]":
+	def readDepends(self) -> "dict[str, str]":
 		if self._readDepends is None:
 			self._readDepends = getattr(self.readerClass, "depends", {})
 		return self._readDepends
 
 	@property
-	def writeDepends(self: "typing.Self") -> "dict[str, str]":
+	def writeDepends(self) -> "dict[str, str]":
 		if self._writeDepends is None:
 			self._writeDepends = getattr(self.writerClass, "depends", {})
 		return self._writeDepends
 
-	def checkModule(self: "typing.Self") -> None:
-		module = self.module
+	def checkModule(self, module) -> None:
+		name = self.name
 
 		if hasattr(module, "write"):
 			log.error(
-				f"plugin {format} has write function, "
-				f"must migrate to Writer class",
+				f"plugin {name!r} has write function, "
+				"must migrate to Writer class",
 			)
 
 		extensions = module.extensions
 		if not isinstance(extensions, tuple):
-			msg = f"{format} plugin: extensions must be tuple"
+			msg = f"{name} plugin: extensions must be tuple"
 			if isinstance(extensions, list):
 				extensions = tuple(extensions)
 				log.error(msg)
 			else:
-				raise ValueError(msg)
+				raise TypeError(msg)
 
 		if not isinstance(self.readDepends, dict):
 			log.error(
@@ -397,11 +409,11 @@ class PluginProp(object):
 
 		for name, opt in self.optionsProp.items():
 			if name.lower() != name:
-				suggestName = "".join([
+				suggestName = "".join(
 					"_" + x.lower() if x.isupper()
 					else x
 					for x in name
-				])
+				)
 				log.debug(
 					f"{self.name}: please rename option "
 					f"{name} to {suggestName}",
@@ -411,7 +423,41 @@ class PluginProp(object):
 					f"{self.name}: please add comment for option {name}",
 				)
 
-	def checkReaderClass(self: "typing.Self") -> bool:
+	valid__all__ = [
+		"enable",
+		"lname",
+		"format",
+		"description",
+		"extensions",
+		"extensionCreate",
+		"singleFile",
+		"kind",
+		"wiki",
+		"website",
+		"optionsProp",
+		"Reader",
+		"Writer",
+	]
+
+	# only run this on CI to do extra validation
+	def checkModuleMore(self, module) -> None:
+		name = self.name
+		if not hasattr(module, "__all__"):
+			raise PluginCheckError(f"Please add __all__ to plugin {name!r}")
+		_all = module.__all__
+		for attr in _all:
+			if not hasattr(module, attr):
+				raise PluginCheckError(
+					f"Undefined name {attr!r} in __all__ in plugin {name!r}"
+					f": {module.__file__}",
+				)
+			if attr not in self.valid__all__:
+				raise PluginCheckError(
+					f"Unnecessary name {attr!r} in __all__ in plugin {name!r}"
+					f": {module.__file__}",
+				)
+
+	def checkReaderClass(self) -> bool:
 		cls = self._Reader
 		for attr in (
 			"__init__",
@@ -430,7 +476,7 @@ class PluginProp(object):
 
 		return True
 
-	def checkWriterClass(self: "typing.Self") -> bool:
+	def checkWriterClass(self) -> bool:
 		cls = self._Writer
 		for attr in (
 			"__init__",
@@ -448,13 +494,13 @@ class PluginProp(object):
 
 		return True
 
-	def getReadExtraOptions(self: "typing.Self") -> "list[str]":  # noqa: F811
+	def getReadExtraOptions(self) -> "list[str]":  # noqa: F811
 		cls = self.readerClass
 		if cls is None:
 			return []
 		return self.__class__.getExtraOptionsFromFunc(cls.open, self.name)
 
-	def getWriteExtraOptions(self: "typing.Self") -> "list[str]":  # noqa: F811
+	def getWriteExtraOptions(self) -> "list[str]":  # noqa: F811
 		cls = self.writerClass
 		if cls is None:
 			return []
@@ -467,6 +513,7 @@ class PluginProp(object):
 		format: str,
 	) -> "list[str]":
 		import inspect
+
 		extraOptNames = []
 		for name, param in inspect.signature(func).parameters.items():
 			if name == "self":

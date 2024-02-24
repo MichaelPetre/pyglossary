@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
+#
 # Copyright (C) 2016-2023 Saeed Rasooli on https://github.com/ilius/pyglossary/
 # Copyright (C) 2015 Z. H. Liu on https://github.com/zhansliu/writemdict
 #
@@ -7,19 +9,21 @@
 # Supports both Python 2 (versions >= 2.6) and Python 3.
 #
 # Usage:
-# 	from ripemd128 import ripemd128
-# 	digest = ripemd128(b"The quick brown fox jumps over the lazy dog")
-# 	assert(digest == b"\x3f\xa9\xb5\x7f\x05\x3c\x05\x3f\xbe\x27\x35\xb2\x38\x0d\xb5\x96")
-
-
+# from ripemd128 import ripemd128
+# digest = ripemd128(b"The quick brown fox jumps over the lazy dog")
+# assert(
+# 	digest == b"\x3f\xa9\xb5\x7f\x05\x3c\x05\x3f\xbe\x27\x35\xb2\x38\x0d\xb5\x96"
+# )
 
 import struct
+
+__all__ = ["ripemd128"]
 
 # follows this description: http://homes.esat.kuleuven.be/~bosselae/ripemd/rmd128.txt
 
 
 def f(j, x, y, z):
-	assert 0 <= j and j < 64
+	assert 0 <= j < 64
 	if j < 16:
 		return x ^ y ^ z
 	if j < 32:
@@ -30,7 +34,7 @@ def f(j, x, y, z):
 
 
 def K(j):
-	assert 0 <= j and j < 64
+	assert 0 <= j < 64
 	if j < 16:
 		return 0x00000000
 	if j < 32:
@@ -41,7 +45,7 @@ def K(j):
 
 
 def Kp(j):
-	assert 0 <= j and j < 64
+	assert 0 <= j < 64
 	if j < 16:
 		return 0x50A28BE6
 	if j < 32:
@@ -82,7 +86,7 @@ def rol(s, x):
 	return (x << s | x >> (32 - s)) & 0xFFFFFFFF
 
 
-r =  [
+r = [
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 	7, 4, 13, 1, 10, 6, 15, 3, 12, 0, 9, 5, 2, 14, 11, 8,
 	3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11, 5, 12,
@@ -114,30 +118,30 @@ def ripemd128(message: bytes) -> bytes:
 	h2 = 0x98BADCFE
 	h3 = 0x10325476
 	X = padandsplit(message)
-	for i in range(len(X)):
-		(A, B, C, D) = (h0, h1, h2, h3)
-		(Ap, Bp, Cp, Dp) = (h0, h1, h2, h3)
+	for Xi in X:
+		A, B, C, D = h0, h1, h2, h3
+		Ap, Bp, Cp, Dp = h0, h1, h2, h3
 		for j in range(64):
 			T = rol(
 				s[j],
 				add(
 					A,
 					f(j, B, C, D),
-					X[i][r[j]],
+					Xi[r[j]],
 					K(j),
 				),
 			)
-			(A, D, C, B) = (D, C, B, T)
+			A, D, C, B = D, C, B, T
 			T = rol(
 				sp[j],
 				add(
 					Ap,
 					f(63 - j, Bp, Cp, Dp),
-					X[i][rp[j]],
+					Xi[rp[j]],
 					Kp(j),
 				),
 			)
-			(Ap, Dp, Cp, Bp) = (Dp, Cp, Bp, T)
+			Ap, Dp, Cp, Bp = Dp, Cp, Bp, T
 		T = add(h1, C, Dp)
 		h1 = add(h2, D, Ap)
 		h2 = add(h3, A, Bp)
@@ -148,4 +152,4 @@ def ripemd128(message: bytes) -> bytes:
 
 
 def hexstr(bstr):
-	return "".join("{0:02x}".format(b) for b in bstr)
+	return "".join(f"{b:02x}" for b in bstr)

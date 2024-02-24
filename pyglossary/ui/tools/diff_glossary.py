@@ -1,15 +1,17 @@
 #!/usr/bin/env python
+# mypy: ignore-errors
 
+import atexit
 import difflib
 import os
 import os.path
 import shlex
 import sys
+from collections.abc import Iterator
 from subprocess import PIPE, Popen
-from typing import Iterator
+from typing import TYPE_CHECKING
 
-from pyglossary.entry import Entry
-from pyglossary.glossary_types import EntryType
+from pyglossary.core import log
 from pyglossary.glossary_v2 import Glossary
 from pyglossary.ui.tools.colors import (
 	green,
@@ -23,7 +25,16 @@ from pyglossary.ui.tools.word_diff import (
 	xmlDiff,
 )
 
+if TYPE_CHECKING:
+	from pyglossary.glossary_types import EntryType
+
 Glossary.init()
+
+log.setVerbosity(1)
+
+entrySep = f"\n{'_' * 40}\n\n"
+
+noInfo = os.getenv("GLOSSARY_DIFF_NO_INFO") == "1"
 
 
 def formatInfoValueDiff(diff: "Iterator[str]") -> str:
@@ -42,8 +53,6 @@ def formatInfoValueDiff(diff: "Iterator[str]") -> str:
 			continue
 	return a + "\n" + b
 
-
-entrySep = f"\n{'_' * 40}\n\n"
 
 def diffGlossary(
 	filename1: str,
@@ -70,10 +79,13 @@ def diffGlossary(
 			pagerCmd,
 			stdin=PIPE,
 		)
+
 		def write(msg: str):
 			proc.stdin.write(msg.encode("utf-8"))
+
 	else:
 		proc = None
+
 		def write(msg: str):
 			print(msg, end="")
 
@@ -86,8 +98,12 @@ def diffGlossary(
 	# infoIter1 = iter(sorted(glos1.iterInfo()))
 	# infoIter2 = iter(sorted(glos2.iterInfo()))
 
-	infoIter1 = glos1.iterInfo()
-	infoIter2 = glos2.iterInfo()
+	if noInfo:
+		infoIter1 = iter([])
+		infoIter2 = iter([])
+	else:
+		infoIter1 = glos1.iterInfo()
+		infoIter2 = glos2.iterInfo()
 
 	index1 = -1
 	index2 = -1
@@ -104,9 +120,9 @@ def diffGlossary(
 
 	def printEntry(color: str, prefix: str, index: int, entry: "EntryType") -> None:
 		formatted = (
-			f"{color}{prefix}#{index} " +
-			formatEntry(entry).replace("\n", "\n" + color) +
-			entrySep
+			f"{color}{prefix}#{index} "
+			+ formatEntry(entry).replace("\n", "\n" + color)
+			+ entrySep
 		)
 		write(formatted)
 
@@ -114,11 +130,7 @@ def diffGlossary(
 		key, value = pair
 		spaces = " " * (len(prefix) + 7)
 		valueColor = color + spaces + value.replace("\n", "\n" + spaces + color)
-		formatted = (
-			f"{color}{prefix} Info: {key}\n"
-			f"{valueColor}" +
-			entrySep
-		)
+		formatted = f"{color}{prefix} Info: {key}\n{valueColor}" + entrySep
 		write(formatted)
 
 	def printChangedEntry(entry1: "EntryType", entry2: "EntryType") -> None:
@@ -130,25 +142,15 @@ def diffGlossary(
 			ids = f"#{index1}"
 		else:
 			ids = f"A#{index1} B#{index2}"
-		formatted = (
-			f"=== {yellow}{ids}{reset} " +
-			formatEntry(entry1) +
-			entrySep
-		)
+		formatted = f"=== {yellow}{ids}{reset} " + formatEntry(entry1) + entrySep
 		write(formatted)
-
 
 	def printChangedInfo(key: str, value1: str, value2: str) -> str:
 		valueDiff = formatInfoValueDiff(xmlDiff(value1, value2))
 		printInfo(yellow, "=== ", (key, valueDiff))
 
-
 	infoPair1 = None
 	infoPair2 = None
-
-	def newInfoEntry(pair: "tuple[str, str]") -> "EntryType":
-		key, value = pair
-		return Entry(f"Info: {key}", f"Value: {value}")
 
 	def infoStep() -> None:
 		nonlocal infoPair1, infoPair2
@@ -174,11 +176,12 @@ def diffGlossary(
 		printInfo(green, "+++ B: ", infoPair2)
 		infoPair2 = None
 
-	def printAltsChangedEntry(entry1: "EntryType", entry2: "EntryType") -> None:
-		if index1 == index2:
-			ids = f"#{index1}"
-		else:
-			ids = f"A#{index1} B#{index2}"
+	def printAltsChangedEntry(
+		entry1: "EntryType",
+		entry2: "EntryType",
+		showDefi: bool = True,
+	) -> None:
+		ids = f"#{index1}" if index1 == index2 else f"A#{index1} B#{index2}"
 
 		header = f"=== {yellow}{ids}{reset} "
 
@@ -188,15 +191,18 @@ def diffGlossary(
 			linejunk=None,
 			charjunk=None,
 		)
-		entryFormatted = "\n".join([
-			f">>> {entry1.l_word[0]}",
-			formatDiff(altsDiff),
-			entry1.defi,
-		])
-		formatted = (
-			header + entryFormatted +
-			entrySep
+		if entry1.l_word[0] == entry2.l_word[0]:
+			firstWordLine = f">> {entry1.l_word[0]}"
+		else:
+			firstWordLine = f">> {entry1.l_word[0]} (A)\n>> {entry2.l_word[0]} (B)"
+		entryFormatted = "\n".join(
+			[
+				firstWordLine,
+				formatDiff(altsDiff),
+				entry1.defi if showDefi else "",
+			],
 		)
+		formatted = header + entryFormatted + entrySep
 		write(formatted)
 
 	count = 0
@@ -220,7 +226,7 @@ def diffGlossary(
 			entry1, entry2 = None, None
 			return
 
-		if words1[0] == words2[0] and entry1.defi == entry2.defi:
+		if entry1.defi == entry2.defi and (words1[0] in words2 or words2[0] in words1):
 			printAltsChangedEntry(entry1, entry2)
 			entry1, entry2 = None, None
 			return
@@ -244,7 +250,7 @@ def diffGlossary(
 				infoStep()
 			except StopIteration:
 				break
-			except (BrokenPipeError, IOError):
+			except (OSError, BrokenPipeError):
 				break
 
 		if infoPair1:
@@ -262,7 +268,7 @@ def diffGlossary(
 				step()
 			except StopIteration:
 				break
-			except (BrokenPipeError, IOError):
+			except (OSError, BrokenPipeError):
 				break
 
 		if entry1:
@@ -281,7 +287,7 @@ def diffGlossary(
 
 	try:
 		run()
-	except (BrokenPipeError, IOError):
+	except (OSError, BrokenPipeError):
 		pass  # noqa: S110
 	except Exception as e:
 		print(e)
@@ -310,6 +316,13 @@ def gitDiffMain() -> None:
 		f"{'_' * 80}\n\n"
 		f"### File: {filename2}  ({old_hex}..{new_hex})\n"
 	)
+
+	resDir = filename2 + "_res"
+	if os.path.isdir(resDir):
+		resDirTmp = filename1 + "_res"
+		os.symlink(os.path.realpath(resDir), resDirTmp)
+		atexit.register(os.remove, resDirTmp)
+
 	diffGlossary(
 		filename1,
 		filename2,
@@ -322,6 +335,7 @@ def gitDiffMain() -> None:
 
 def main() -> None:
 	import os
+
 	if os.getenv("GIT_DIFF_PATH_COUNTER"):
 		return gitDiffMain()
 

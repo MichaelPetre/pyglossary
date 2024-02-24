@@ -1,7 +1,5 @@
-
-import typing
-
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 #
 # Copyright © 2020 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 #
@@ -17,6 +15,8 @@ import typing
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
+
+
 from . import gtk
 from .utils import (
 	VBox,
@@ -24,9 +24,11 @@ from .utils import (
 	pack,
 )
 
+__all__ = ["AboutWidget"]
+
 
 class AboutTabTitleBox(gtk.Box):
-	def __init__(self: "typing.Self", title: str, icon: str) -> None:
+	def __init__(self, title: str, icon: str) -> None:
 		gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL)
 		self.set_spacing(10)
 		pack(self, VBox(), expand=0)
@@ -42,26 +44,25 @@ class AboutTabTitleBox(gtk.Box):
 		pack(self, VBox(), expand=0)
 		self.set_size_request(60, 60)
 
-	#def do_get_preferred_height_for_width(self, size: int) -> "tuple[int, int]":
-	#	height = int(size * 1.5)
-	#	return height, height
+	# def do_get_preferred_height_for_width(self, size: int) -> "tuple[int, int]":
+	# 	height = int(size * 1.5)
+	# 	return height, height
 
-	# returns: (minimum: int, natural: int, minimum_baseline: int, natural_baseline: int)
-	#def do_measure(self, orientation, for_size):
-	#	return (for_size, for_size, for_size, for_size)
-
-
+	# returns: (minimum: int, natural: int,
+	# 	minimum_baseline: int, natural_baseline: int)
+	# def do_measure(self, orientation, for_size):
+	# 	return (for_size, for_size, for_size, for_size)
 
 
 class AboutWidget(gtk.Box):
 	def __init__(
-		self: "typing.Self",
+		self,
 		logo: str = "",
 		header: str = "",
 		about: str = "",
 		authors: str = "",
-		license: str = "",
-		**kwargs,
+		license_text: str = "",
+		**_kwargs,
 	) -> None:
 		gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL)
 		self.set_spacing(15)
@@ -82,7 +83,7 @@ class AboutWidget(gtk.Box):
 		##
 		tab1_about = self.newTabLabelWidget(about)
 		tab2_authors = self.newTabWidgetTextView(authors)
-		tab3_license = self.newTabWidgetTextView(license)
+		tab3_license = self.newTabWidgetTextView(license_text)
 		##
 		tabs = [
 			(tab1_about, self.newTabTitle("About", "dialog-information-22.png")),
@@ -97,7 +98,7 @@ class AboutWidget(gtk.Box):
 
 	# <a href="...">Something</a> does not work with TextView
 	def newTabWidgetTextView(
-		self: "typing.Self",
+		self,
 		text: str,
 		wrap: bool = False,
 		justification: "gtk.Justification | None" = None,
@@ -108,43 +109,44 @@ class AboutWidget(gtk.Box):
 		if justification is not None:
 			tv.set_justification(justification)
 		tv.set_cursor_visible(False)
-		#tv.set_border_width(10)
+		# tv.set_border_width(10)
 		buf = tv.get_buffer()
-		# buf.insert_markup(buf.get_end_iter(), markup=text, len=len(text.encode("utf-8")))
+		# buf.insert_markup(buf.get_end_iter(), markup=text,
+		# len=len(text.encode("utf-8")))
 		buf.set_text(text)
 		tv.show()
 		swin = gtk.ScrolledWindow()
 		swin.set_policy(gtk.PolicyType.AUTOMATIC, gtk.PolicyType.AUTOMATIC)
-		#swin.set_border_width(0)
+		# swin.set_border_width(0)
 		swin.set_child(tv)
 		return swin
 
 	def newTabLabelWidget(
-		self: "typing.Self",
+		self,
 		text: str,
-		wrap: bool = False,
-		justification: "gtk.Justification | None" = None,
+		# wrap: bool = False,
+		# justification: "gtk.Justification | None" = None,
 	):
 		box = VBox()
-		#box.set_border_width(10)
+		# box.set_border_width(10)
 		label = gtk.Label()
 		label.set_selectable(True)
 		label.set_xalign(0)
 		label.set_yalign(0)
 		pack(box, label, 0, 0)
-		#if wrap:
-		#	tv.set_wrap_mode(gtk.WrapMode.WORD)
-		#if justification is not None:
-		#	tv.set_justification(justification)
+		# if wrap:
+		# 	tv.set_wrap_mode(gtk.WrapMode.WORD)
+		# if justification is not None:
+		# 	tv.set_justification(justification)
 		# label.set_cursor_visible(False)
 		# label.set_border_width(10)
 		label.set_markup(text)
 		label.show()
 		swin = gtk.ScrolledWindow()
 		swin.set_policy(gtk.PolicyType.AUTOMATIC, gtk.PolicyType.AUTOMATIC)
-		#swin.set_border_width(0)
+		# swin.set_border_width(0)
 		swin.set_child(box)
 		return swin
 
-	def newTabTitle(self: "typing.Self", title: str, icon: str):
+	def newTabTitle(self, title: str, icon: str):
 		return AboutTabTitleBox(title, icon)

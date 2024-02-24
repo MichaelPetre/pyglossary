@@ -1,37 +1,37 @@
 import plistlib
 import sys
-import typing
 import unittest
 from os.path import abspath, dirname, join
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
+from glossary_v2_test import TestGlossaryBase
+
 from pyglossary.glossary import Glossary
-from tests.glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryAppleDict(TestGlossaryBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 
-		self.dataFileCRC32.update({
+		hashDict = {
 			"appledict-src/002-no-morphology-v3.txt": "d8086fe8",
-
 			"appledict-src/002-no-morphology-v3/002-no-morphology-v3.css": "6818c1e5",
 			"appledict-src/002-no-morphology-v3/002-no-morphology-v3.plist": "f9f6ff31",
 			"appledict-src/002-no-morphology-v3/002-no-morphology-v3.xml": "707994d6",
 			"appledict-src/002-no-morphology-v3/Makefile": "65f736b6",
-		})
+		}
+		self.dataFileCRC32.update(hashDict)
 
-	def comparePlist(self: "typing.Self", fpath1, fpath2):
+	def comparePlist(self, fpath1, fpath2):
 		with open(fpath1, "rb") as _file:
 			data1 = plistlib.loads(_file.read())
 		with open(fpath2, "rb") as _file:
 			data2 = plistlib.loads(_file.read())
 		self.assertEqual(data1, data2)
 
-	def test_tabfile_without_morpho_to_appledict_source(self: "typing.Self"):
+	def test_tabfile_without_morpho_to_appledict_source(self):
 		self.glos = Glossary()
 
 		baseName = "002-no-morphology-v3"

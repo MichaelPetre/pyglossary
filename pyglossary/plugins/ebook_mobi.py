@@ -23,14 +23,14 @@
 # SOFTWARE.
 
 import os
-import typing
+from collections.abc import Generator
 from datetime import datetime
 from os.path import join
+from typing import TYPE_CHECKING
 
 from pyglossary.core import log
 from pyglossary.ebook_base import EbookWriter
 from pyglossary.flags import DEFAULT_YES
-from pyglossary.glossary_types import EntryType, GlossaryType
 from pyglossary.langs import Lang
 from pyglossary.option import (
 	BoolOption,
@@ -40,12 +40,31 @@ from pyglossary.option import (
 	StrOption,
 )
 
+if TYPE_CHECKING:
+	from pyglossary.glossary_types import EntryType, GlossaryType
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
+
 enable = True
 lname = "mobi"
 format = "Mobi"
 description = "Mobipocket (.mobi) E-Book"
 extensions = (".mobi",)
 extensionCreate = ".mobi"
+singleFile = False
 sortOnWrite = DEFAULT_YES
 sortKeyName = "ebook"
 kind = "package"
@@ -58,7 +77,6 @@ optionsProp: "dict[str, Option]" = {
 	),
 	# "group_by_prefix_merge_min_size": IntOption(),
 	# "group_by_prefix_merge_across_first": BoolOption(),
-
 	# specific to mobi
 	"kindlegen_path": StrOption(
 		comment="Path to kindlegen executable",
@@ -107,20 +125,23 @@ extraDocs = [
 ]
 
 
-class GroupStateBySize(object):
-	def __init__(self: "typing.Self", writer: "Writer") -> None:
+class GroupStateBySize:
+	def __init__(self, writer: "Writer") -> None:
 		self.writer = writer
 		self.group_index = -1
 		self.reset()
 
-	def reset(self: "typing.Self") -> None:
-		self.group_contents = []
+	def reset(self) -> None:
+		self.group_contents: "list[str]" = []
 		self.group_size = 0
 
-	def add(self: "typing.Self", entry: "EntryType") -> None:
-		word = entry.l_word
+	def add(self, entry: "EntryType") -> None:
 		defi = entry.defi
-		content = self.writer.format_group_content(word, defi)
+		content = self.writer.format_group_content(
+			entry.l_word[0],
+			defi,
+			variants=entry.l_word[1:],
+		)
 		self.group_contents.append(content)
 		self.group_size += len(content.encode("utf-8"))
 
@@ -133,7 +154,7 @@ class Writer(EbookWriter):
 	_hide_word_index: bool = False
 	_spellcheck: bool = True
 	_exact: bool = False
-	CSS_CONTENTS = """"@charset "UTF-8";"""
+	CSS_CONTENTS = b""""@charset "UTF-8";"""
 	GROUP_XHTML_TEMPLATE = """<?xml version="1.0" encoding="utf-8" \
 standalone="no"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" \
@@ -209,8 +230,9 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 <guide></guide>
 </package>"""
 
-	def __init__(self: "typing.Self", glos: "GlossaryType", **kwargs) -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		import uuid
+
 		EbookWriter.__init__(
 			self,
 			glos,
@@ -219,33 +241,36 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 		# FIXME: check if full html pages/documents as entry do work
 		# glos.stripFullHtml(errorHandler=None)
 
-	def get_prefix(self: "typing.Self", word: str) -> str:
+	def get_prefix(self, word: str) -> str:
 		if not word:
-			return None
+			return ""
 		length = self._group_by_prefix_length
 		prefix = word[:length].lower()
 		if prefix[0] < "a":
 			return "SPECIAL"
 		return prefix
 
-	def format_group_content(self: "typing.Self", word: "list[str]", defi: str) -> str:
+	def format_group_content(
+		self,
+		word: "str",
+		defi: str,
+		variants: "list[str] | None" = None,
+	) -> str:
 		hide_word_index = self._hide_word_index
-		if len(word) == 1:
-			infl = ''
-			mainword = word[0]
-		else:
-			mainword, *variants = word
-			iforms_list = []
-			for variant in variants:
-				iforms_list.append(self.GROUP_XHTML_WORD_IFORM_TEMPLATE.format(
+		infl = ""
+		if variants:
+			iforms_list = [
+				self.GROUP_XHTML_WORD_IFORM_TEMPLATE.format(
 					inflword=variant,
-					exact_str=' exact="yes"' if self._exact else '',
-				))
-			infl = '\n' + \
-				self.GROUP_XHTML_WORD_INFL_TEMPLATE.format(
-					iforms_str="\n".join(iforms_list))
+					exact_str=' exact="yes"' if self._exact else "",
+				)
+				for variant in variants
+			]
+			infl = "\n" + self.GROUP_XHTML_WORD_INFL_TEMPLATE.format(
+				iforms_str="\n".join(iforms_list),
+			)
 
-		headword = self.escape_if_needed(mainword)
+		headword = self.escape_if_needed(word)
 
 		defi = self.escape_if_needed(defi)
 
@@ -264,14 +289,14 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			infl=infl,
 		)
 
-	def getLangCode(self: "typing.Self", lang: "Lang") -> str:
+	def getLangCode(self, lang: "Lang | None") -> str:
 		return lang.code if isinstance(lang, Lang) else ""
 
 	def get_opf_contents(
-		self: "typing.Self",
+		self,
 		manifest_contents: str,
 		spine_contents: str,
-	) -> str:
+	) -> bytes:
 		cover = ""
 		if self.cover:
 			cover = self.COVER_TEMPLATE.format(cover=self.cover)
@@ -290,10 +315,9 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 			cover=cover,
 			manifest=manifest_contents,
 			spine=spine_contents,
-		)
+		).encode("utf-8")
 
-	def write_groups(self: "typing.Self") -> None:
-
+	def write_groups(self) -> "Generator[None, EntryType, None]":
 		def add_group(state: "GroupStateBySize") -> None:
 			if state.group_size <= 0:
 				return
@@ -307,7 +331,7 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 					group_contents=self.GROUP_XHTML_WORD_DEFINITION_JOINER.join(
 						state.group_contents,
 					),
-				),
+				).encode("utf-8"),
 				"application/xhtml+xml",
 			)
 
@@ -327,7 +351,7 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 
 		add_group(state)
 
-	def write(self: "typing.Self") -> None:
+	def write(self) -> "Generator[None, EntryType, None]":
 		import shutil
 		import subprocess
 
@@ -341,7 +365,7 @@ xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
 
 		# run kindlegen
 		if not kindlegen_path:
-			kindlegen_path = shutil.which("kindlegen")
+			kindlegen_path = shutil.which("kindlegen") or ""
 		if not kindlegen_path:
 			log.warning(
 				"Not running kindlegen, "

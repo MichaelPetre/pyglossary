@@ -1,23 +1,16 @@
 import gzip
-import sys
-import typing
 import unittest
-from os.path import abspath, dirname
 
 import marisa_trie  # noqa: F401, to ensure it's installed
-
-rootDir = dirname(dirname(abspath(__file__)))
-sys.path.insert(0, rootDir)
-
-from tests.glossary_v2_test import TestGlossaryBase
+from glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryKobo(TestGlossaryBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
 		# self.dataFileCRC32.update({})
 
-	def convert_txt_kobo(self: "typing.Self", fname, sha1sumDict, **convertArgs):
+	def convert_txt_kobo(self, fname, sha1sumDict, **convertArgs):
 		outputFname = f"{fname}-2.kobo.zip"
 		outputFpath = self.newTempFilePath(outputFname)
 		# expectedFpath = self.downloadFile(f"{fname}.kobo.zip")
@@ -27,9 +20,7 @@ class TestGlossaryKobo(TestGlossaryBase):
 			**convertArgs,
 		)
 		dataReplaceFuncs = {
-			_zfname: gzip.decompress
-			for _zfname in sha1sumDict
-			if _zfname != "words"
+			_zfname: gzip.decompress for _zfname in sha1sumDict if _zfname != "words"
 		}
 		self.checkZipFileSha1sum(
 			outputFpath,
@@ -37,7 +28,7 @@ class TestGlossaryKobo(TestGlossaryBase):
 			dataReplaceFuncs=dataReplaceFuncs,
 		)
 
-	def test_convert_txt_kobo_1(self: "typing.Self"):
+	def test_convert_txt_kobo_1(self):
 		sha1sumDict = {
 			"11.html": "39f0f46560da7398ab0d3b19cc1c2387ecd201dd",
 			"aa.html": "df9460450e8b46e913c57bf39dcc799ffdc2fb33",

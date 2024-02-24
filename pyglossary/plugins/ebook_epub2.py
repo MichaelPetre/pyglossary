@@ -1,6 +1,3 @@
-
-import typing
-
 # -*- coding: utf-8 -*-
 # The MIT License (MIT)
 # Copyright © 2012-2016 Alberto Pettarin (alberto@albertopettarin.it)
@@ -20,11 +17,11 @@ import typing
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from typing import Any, ClassVar
+
+from typing import TYPE_CHECKING, Any
 
 from pyglossary.ebook_base import EbookWriter
 from pyglossary.flags import ALWAYS
-from pyglossary.glossary_types import GlossaryType
 from pyglossary.option import (
 	BoolOption,
 	IntOption,
@@ -32,12 +29,31 @@ from pyglossary.option import (
 	StrOption,
 )
 
+if TYPE_CHECKING:
+	from pyglossary.glossary_types import GlossaryType
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
+
 enable = True
 lname = "epub2"
 format = "Epub2"
 description = "EPUB-2 E-Book"
 extensions = (".epub",)
 extensionCreate = ".epub"
+singleFile = True
 sortOnWrite = ALWAYS
 sortKeyName = "ebook"
 kind = "package"
@@ -103,15 +119,14 @@ class Writer(EbookWriter):
 	</navMap>
 </ncx>"""
 
-	NCX_NAVPOINT_TEMPLATE = \
-		"""\t<navPoint id="n{index:06d}" playOrder="{index:d}">
+	NCX_NAVPOINT_TEMPLATE = """\t<navPoint id="n{index:06d}" playOrder="{index:d}">
 		<navLabel>
 			<text>{text}</text>
 		</navLabel>
 		<content src="{src}" />
 	</navPoint>"""
 
-	CSS_CONTENTS = """@charset "UTF-8";
+	CSS_CONTENTS = b"""@charset "UTF-8";
 body {
 	margin: 10px 25px 10px 25px;
 }
@@ -156,8 +171,7 @@ p.groupDefinition {
 }
 """
 
-	GROUP_XHTML_TEMPLATE = \
-		"""<?xml version="1.0" encoding="utf-8" standalone="no"?>
+	GROUP_XHTML_TEMPLATE = """<?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
 	"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -175,7 +189,7 @@ p.groupDefinition {
 {group_contents}
 	</body>
 </html>"""
-	GROUP_XHTML_INDEX_LINK = "\t\t<a href=\"index.xhtml\">[ Index ]</a>"
+	GROUP_XHTML_INDEX_LINK = '\t\t<a href="index.xhtml">[ Index ]</a>'
 
 	GROUP_XHTML_WORD_DEFINITION_TEMPLATE = """\t<div class="groupEntry">
 		<h2 class="groupHeadword">{headword}</h2>
@@ -203,10 +217,11 @@ p.groupDefinition {
 	</spine>
 </package>"""
 
-	COVER_TEMPLATE = "<meta name=\"cover\" content=\"{cover}\" />"
+	COVER_TEMPLATE = '<meta name="cover" content="{cover}" />'
 
-	def __init__(self: "typing.Self", glos: "GlossaryType") -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		import uuid
+
 		EbookWriter.__init__(
 			self,
 			glos,
@@ -214,51 +229,59 @@ p.groupDefinition {
 		glos.setInfo("uuid", str(uuid.uuid4()).replace("-", ""))
 
 	@classmethod
-	def cls_get_prefix(cls: "ClassVar", options: "dict[str, Any]", word: str) -> str:
+	def cls_get_prefix(
+		cls: "type[EbookWriter]",
+		options: "dict[str, Any]",
+		word: str,
+	) -> str:
 		if not word:
-			return None
+			return ""
 		length = options.get("group_by_prefix_length", cls._group_by_prefix_length)
 		prefix = word[:length].lower()
 		if prefix[0] < "a":
 			return "SPECIAL"
 		return prefix
 
-	def get_prefix(self: "typing.Self", word: str) -> str:
+	def get_prefix(self, word: str) -> str:
 		if not word:
-			return None
+			return ""
 		length = self._group_by_prefix_length
 		prefix = word[:length].lower()
 		if prefix[0] < "a":
 			return "SPECIAL"
 		return prefix
 
-	def write_ncx(self: "typing.Self", group_labels: "list[str]") -> None:
+	def write_ncx(self, group_labels: "list[str]") -> None:
 		"""
-			write_ncx
-			only for epub
+		write_ncx
+		only for epub.
 		"""
 		ncx_items = []
 		index = 1
 		if self._include_index_page:
-			ncx_items.append(self.NCX_NAVPOINT_TEMPLATE.format(
-				index=index,
-				text="Index",
-				src="index.xhtml",
-			))
+			ncx_items.append(
+				self.NCX_NAVPOINT_TEMPLATE.format(
+					index=index,
+					text="Index",
+					src="index.xhtml",
+				),
+			)
 			index += 1
 		for group_label in group_labels:
-			ncx_items.append(self.NCX_NAVPOINT_TEMPLATE.format(
-				index=index,
-				text=group_label,
-				src=self.get_group_xhtml_file_name_from_index(index),
-			))
+			ncx_items.append(
+				self.NCX_NAVPOINT_TEMPLATE.format(
+					index=index,
+					text=group_label,
+					src=self.get_group_xhtml_file_name_from_index(index),
+				),
+			)
 			index += 1
 		ncx_items_unicode = "\n".join(ncx_items)
 		ncx_contents = self.NCX_TEMPLATE.format(
 			identifier=self._glos.getInfo("uuid"),
 			title=self._glos.getInfo("name"),
 			ncx_items=ncx_items_unicode,
-		)
+		).encode("utf-8")
 		self.add_file_manifest(
 			"OEBPS/toc.ncx",
 			"toc.ncx",

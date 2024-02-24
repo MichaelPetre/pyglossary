@@ -19,13 +19,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Any, Iterable, Iterator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from collections.abc import Iterable, Iterator
+	from typing import Any
+
+__all__ = ["unique_everseen"]
 
 
 # from https://github.com/erikrose/more-itertools
 def unique_everseen(iterable: "Iterable") -> "Iterator":
+	"""List unique elements, preserving order. Remember all elements ever seen."""
 	from itertools import filterfalse
-	"List unique elements, preserving order. Remember all elements ever seen."
+
 	# unique_everseen('AAAABBBCCDAABBB') --> A B C D
 	seen: "set[Any]" = set()
 	seen_add = seen.add

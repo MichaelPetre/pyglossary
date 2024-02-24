@@ -1,18 +1,18 @@
 import sys
-import typing
 import unittest
 from os.path import abspath, dirname, relpath
 
 rootDir = dirname(dirname(abspath(__file__)))
 sys.path.insert(0, rootDir)
 
+from glossary_errors_test import TestGlossaryErrorsBase
+
 from pyglossary.glossary import Glossary
-from tests.glossary_errors_test import TestGlossaryErrorsBase
 
 
 class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
 	def convert_txt_stardict(
-		self: "typing.Self",
+		self,
 		fname,
 		fname2="",
 		syn=True,
@@ -32,10 +32,7 @@ class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
 
 		inputFilename = self.downloadFile(f"{fname}.txt")
 		outputFilename = self.newTempFilePath(f"{fname}.ifo")
-		otherFiles = {
-			ext: self.newTempFilePath(f"{fname}.{ext}")
-			for ext in binExtList
-		}
+		otherFiles = {ext: self.newTempFilePath(f"{fname}.{ext}") for ext in binExtList}
 
 		glos = self.glos = Glossary(info=info)
 
@@ -69,7 +66,7 @@ class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
 			)
 
 	def convert_txt_stardict_zip(
-		self: "typing.Self",
+		self,
 		fname,
 		sha1sumDict,
 		dictzip=False,
@@ -105,7 +102,7 @@ class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
 		)
 
 	def convert_stardict_txt(
-		self: "typing.Self",
+		self,
 		inputFname: str,
 		outputFname: str,
 		testId: str,
@@ -136,74 +133,67 @@ class TestGlossaryStarDictBase(TestGlossaryErrorsBase):
 
 
 class TestGlossaryStarDict(TestGlossaryStarDictBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryErrorsBase.__init__(self, *args, **kwargs)
 
-		self.dataFileCRC32.update({
-			"004-bar.sd/004-bar.dict": "9ea397f8",
-			"004-bar.sd/004-bar.idx": "cf9440cf",
-			"004-bar.sd/004-bar.ifo": "ada870e4",
-			"004-bar.sd/004-bar.syn": "286b17bf",
+		self.dataFileCRC32.update(
+			{
+				"004-bar.sd/004-bar.dict": "9ea397f8",
+				"004-bar.sd/004-bar.idx": "cf9440cf",
+				"004-bar.sd/004-bar.ifo": "ada870e4",
+				"004-bar.sd/004-bar.syn": "286b17bf",
+				"100-en-de-v4.sd/100-en-de-v4.dict": "5a97476f",
+				"100-en-de-v4.sd/100-en-de-v4.idx": "a99f29d2",
+				"100-en-de-v4.sd/100-en-de-v4.ifo": "6529871f",
+				"100-en-fa.sd/100-en-fa.dict": "223a0d1d",
+				"100-en-fa.sd/100-en-fa.idx": "6df43378",
+				"100-en-fa.sd/100-en-fa.ifo": "3f2086cd",
+				"100-en-fa.sd/100-en-fa.syn": "1160fa0b",
+				"100-en-fa-sd.txt": "85f9d3fc",
+				# FIXME: remove empty description line from 100-en-fa.ifo
+				# stardict-mixed-types-1.ifo, "stardict-mixed-types-2.ifo
+				"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.dict": "223a0d1d",
+				"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.idx": "13f1c7af",
+				"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.ifo": "07338eed",
+				"100-ja-en.sd/100-ja-en.dict": "39715f01",
+				"100-ja-en.sd/100-ja-en.idx": "adf0e552",
+				"100-ja-en.sd/100-ja-en.ifo": "b01e368c",
+				"100-ja-en.sd/100-ja-en.syn": "76e6df95",
+				"300-ru-en.txt": "77cfee2f",
+				"300-ru-en.sd/300-ru-en.dict": "8be7fa4c",
+				"300-ru-en.sd/300-ru-en.idx": "1cd30f1a",
+				"300-ru-en.sd/300-ru-en.ifo": "0b135812",
+				"300-ru-en.sd/300-ru-en.syn": "87ee3372",
+				"stardict-mixed-types-2.sd/stardict-mixed-types-2.dict": "2e43237a",
+				"stardict-mixed-types-2.sd/stardict-mixed-types-2.idx": "65a1f9fc",
+				"stardict-mixed-types-2.sd/stardict-mixed-types-2.ifo": "e1063b84",
+				"stardict-mixed-types-2.sd.txt": "94de4bc6",
+				"002-plain-html.txt": "75484314",
+				"002-plain-html.sd/002-plain-html.dict": "2e9d20d8",
+				"002-plain-html.sd/002-plain-html.idx": "3956ad72",
+				"002-plain-html.sd/002-plain-html.ifo": "1991f125",
+				"004-plain-html-alts.txt": "505d4675",
+				"004-plain-html-alts.sd/004-plain-html-alts.dict": "889f11f8",
+				"004-plain-html-alts.sd/004-plain-html-alts.idx": "edbe368d",
+				"004-plain-html-alts.sd/004-plain-html-alts.ifo": "b9b92fa3",
+				"004-plain-html-alts.sd/004-plain-html-alts.syn": "c07f7111",
+				"004-plain-html-alts-merge-syns.sd/"
+				"004-plain-html-alts-merge-syns.dict": "889f11f8",
+				"004-plain-html-alts-merge-syns.sd/"
+				"004-plain-html-alts-merge-syns.idx": "092ba555",
+				"004-plain-html-alts-merge-syns.sd/"
+				"004-plain-html-alts-merge-syns.ifo": "628abe99",
+			},
+		)
 
-			"100-en-de.sd/100-en-de.dict": "d74bf277",
-			"100-en-de.sd/100-en-de.idx": "945b303c",
-			"100-en-de.sd/100-en-de.ifo": "6529871f",
-
-			"100-en-fa.sd/100-en-fa.dict": "223a0d1d",
-			"100-en-fa.sd/100-en-fa.idx": "6df43378",
-			"100-en-fa.sd/100-en-fa.ifo": "3f2086cd",
-			"100-en-fa.sd/100-en-fa.syn": "1160fa0b",
-			"100-en-fa-sd.txt": "85f9d3fc",
-			# FIXME: remove empty description line from 100-en-fa.ifo
-			# stardict-mixed-types-1.ifo, "stardict-mixed-types-2.ifo
-
-			"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.dict": "223a0d1d",
-			"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.idx": "13f1c7af",
-			"100-en-fa-merge-syns.sd/100-en-fa-merge-syns.ifo": "07338eed",
-
-			"100-ja-en.sd/100-ja-en.dict": "39715f01",
-			"100-ja-en.sd/100-ja-en.idx": "adf0e552",
-			"100-ja-en.sd/100-ja-en.ifo": "b01e368c",
-			"100-ja-en.sd/100-ja-en.syn": "76e6df95",
-
-			"300-ru-en.txt": "77cfee2f",
-			"300-ru-en.sd/300-ru-en.dict": "8be7fa4c",
-			"300-ru-en.sd/300-ru-en.idx": "1cd30f1a",
-			"300-ru-en.sd/300-ru-en.ifo": "0b135812",
-			"300-ru-en.sd/300-ru-en.syn": "87ee3372",
-
-			"stardict-mixed-types-2.sd/stardict-mixed-types-2.dict": "2e43237a",
-			"stardict-mixed-types-2.sd/stardict-mixed-types-2.idx": "65a1f9fc",
-			"stardict-mixed-types-2.sd/stardict-mixed-types-2.ifo": "e1063b84",
-			"stardict-mixed-types-2.sd.txt": "94de4bc6",
-
-			"002-plain-html.txt": "75484314",
-			"002-plain-html.sd/002-plain-html.dict": "2e9d20d8",
-			"002-plain-html.sd/002-plain-html.idx": "3956ad72",
-			"002-plain-html.sd/002-plain-html.ifo": "1991f125",
-
-			"004-plain-html-alts.txt": "505d4675",
-			"004-plain-html-alts.sd/004-plain-html-alts.dict": "889f11f8",
-			"004-plain-html-alts.sd/004-plain-html-alts.idx": "edbe368d",
-			"004-plain-html-alts.sd/004-plain-html-alts.ifo": "b9b92fa3",
-			"004-plain-html-alts.sd/004-plain-html-alts.syn": "c07f7111",
-
-			"004-plain-html-alts-merge-syns.sd/"
-			"004-plain-html-alts-merge-syns.dict": "889f11f8",
-			"004-plain-html-alts-merge-syns.sd/"
-			"004-plain-html-alts-merge-syns.idx": "092ba555",
-			"004-plain-html-alts-merge-syns.sd/"
-			"004-plain-html-alts-merge-syns.ifo": "628abe99",
-		})
-
-	def test_convert_txt_stardict_0(self: "typing.Self"):
+	def test_convert_txt_stardict_0(self):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			config={"auto_sqlite": True},
 			direct=True,
 		)
 
-	def test_convert_txt_stardict_1(self: "typing.Self"):
+	def test_convert_txt_stardict_1(self):
 		for sqlite in (None, False, True):
 			for rawEntryCompress in (None, True, False):
 				self.convert_txt_stardict(
@@ -212,8 +202,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 					sqlite=sqlite,
 				)
 
-
-	def test_convert_txt_stardict_1_merge_syns(self: "typing.Self"):
+	def test_convert_txt_stardict_1_merge_syns(self):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			fname2="100-en-fa-merge-syns",
@@ -221,7 +210,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_1_zip(self: "typing.Self"):
+	def test_convert_txt_stardict_1_zip(self):
 		sha1sumDict = {
 			"100-en-fa.dict": "1e462e829f9e2bf854ceac2ef8bc55911460c79e",
 			"100-en-fa.idx": "943005945b35abf3a3e7b80375c76daa87e810f0",
@@ -235,7 +224,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_2(self: "typing.Self"):
+	def test_convert_txt_stardict_2(self):
 		for sqlite in (None, False, True):
 			for rawEntryCompress in (None, True, False):
 				self.convert_txt_stardict(
@@ -244,22 +233,22 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 					sqlite=sqlite,
 				)
 
-	def test_convert_txt_stardict_3(self: "typing.Self"):
+	def test_convert_txt_stardict_3(self):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
-				"100-en-de",
+				"100-en-de-v4",
 				syn=False,
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_3_merge_syns(self: "typing.Self"):
+	def test_convert_txt_stardict_3_merge_syns(self):
 		self.convert_txt_stardict(
-			"100-en-de",
+			"100-en-de-v4",
 			syn=False,
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_4(self: "typing.Self"):
+	def test_convert_txt_stardict_4(self):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
 				"100-ja-en",
@@ -267,7 +256,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_5(self: "typing.Self"):
+	def test_convert_txt_stardict_5(self):
 		for sqlite in (None, False, True):
 			self.convert_txt_stardict(
 				"300-ru-en",
@@ -275,7 +264,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 				sqlite=sqlite,
 			)
 
-	def test_convert_txt_stardict_sqlite_no_alts(self: "typing.Self"):
+	def test_convert_txt_stardict_sqlite_no_alts(self):
 		self.convert_txt_stardict(
 			"100-en-fa",
 			config={"enable_alts": False},
@@ -285,14 +274,14 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 			"SQLite mode only works with enable_alts=True, force-enabling it.",
 		)
 
-	def test_convert_stardict_txt_1(self: "typing.Self"):
+	def test_convert_stardict_txt_1(self):
 		self.convert_stardict_txt(
 			"100-en-fa",
 			"100-en-fa-sd",
 			"1",
 		)
 
-	def test_convert_stardict_txt_mixed_types_1(self: "typing.Self"):
+	def test_convert_stardict_txt_mixed_types_1(self):
 		self.convert_stardict_txt(
 			"stardict-mixed-types-2",
 			"stardict-mixed-types-2.sd",
@@ -300,7 +289,7 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 			syn=False,
 		)
 
-	def test_convert_stardict_txt_mixed_types_2(self: "typing.Self"):
+	def test_convert_stardict_txt_mixed_types_2(self):
 		self.convert_stardict_txt(
 			"stardict-mixed-types-2",
 			"stardict-mixed-types-2.sd",
@@ -309,26 +298,26 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 			readOptions={"xdxf_to_html": False},
 		)
 
-	def test_convert_txt_stardict_general_1(self: "typing.Self"):
+	def test_convert_txt_stardict_general_1(self):
 		self.convert_txt_stardict(
 			"002-plain-html",
 			syn=False,
 		)
 
-	def test_convert_txt_stardict_general_1_merge_syns(self: "typing.Self"):
+	def test_convert_txt_stardict_general_1_merge_syns(self):
 		self.convert_txt_stardict(
 			"002-plain-html",
 			syn=False,
 			writeOptions={"merge_syns": True},
 		)
 
-	def test_convert_txt_stardict_general_2(self: "typing.Self"):
+	def test_convert_txt_stardict_general_2(self):
 		self.convert_txt_stardict(
 			"004-plain-html-alts",
 			syn=True,
 		)
 
-	def test_convert_txt_stardict_general_2_merge_syns(self: "typing.Self"):
+	def test_convert_txt_stardict_general_2_merge_syns(self):
 		self.convert_txt_stardict(
 			"004-plain-html-alts",
 			fname2="004-plain-html-alts-merge-syns",
@@ -338,22 +327,24 @@ class TestGlossaryStarDict(TestGlossaryStarDictBase):
 
 
 class TestGlossaryErrorsStarDict(TestGlossaryErrorsBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryErrorsBase.__init__(self, *args, **kwargs)
 
-	def test_convert_from_stardict_invalid_sametypesequence(self: "typing.Self"):
+	def test_convert_from_stardict_invalid_sametypesequence(self):
 		fname = "foobar"
 		inputFilename = self.newTempFilePath(f"{fname}.ifo")
 		outputFilename = self.newTempFilePath(f"{fname}.txt")
 
 		with open(inputFilename, mode="w") as _file:
-			_file.write("""StarDict's dict ifo file
+			_file.write(
+				"""StarDict's dict ifo file
 version=3.0.0
 bookname=Test
 wordcount=123
 idxfilesize=1234
 sametypesequence=abcd
-""")
+""",
+			)
 
 		glos = self.glos = Glossary()
 

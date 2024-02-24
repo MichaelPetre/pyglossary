@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 	import io
-	from typing import Callable
+	from collections.abc import Callable
 
 	from .glossary_types import GlossaryType
 
@@ -15,6 +15,15 @@ if TYPE_CHECKING:
 stdCompressions = ("gz", "bz2", "lzma")
 
 log = logging.getLogger("pyglossary")
+
+__all__ = [
+	"compress",
+	"compressionOpen",
+	"compressionOpenFunc",
+	"stdCompressions",
+	"uncompress",
+	"zipFileOrDir",
+]
 
 
 def compressionOpenFunc(c: str) -> "Callable | None":
@@ -41,6 +50,7 @@ def compressionOpen(
 	**kwargs,  # noqa: ANN003
 ) -> "io.IOBase":
 	from os.path import splitext
+
 	filenameNoExt, ext = splitext(filename)
 	ext = ext.lower().lstrip(".")
 	try:
@@ -60,7 +70,7 @@ def compressionOpen(
 	return open(filename, **kwargs)  # noqa: SIM115
 
 
-def zipFileOrDir(glos: "GlossaryType", filename: str) -> None:
+def zipFileOrDir(filename: str) -> None:
 	import shutil
 	import zipfile
 	from os.path import (
@@ -80,32 +90,32 @@ def zipFileOrDir(glos: "GlossaryType", filename: str) -> None:
 		for subFname in os.listdir(filename):
 			_zipFileAdd(zf, join(filename, subFname))
 
-	zf = zipfile.ZipFile(f"{filename}.zip", mode="w")
+	with zipfile.ZipFile(f"{filename}.zip", mode="w") as zf:
+		if isdir(filename):
+			dirn, name = split(filename)
+			with indir(filename):
+				for subFname in os.listdir(filename):
+					_zipFileAdd(zf, subFname)
 
-	if isdir(filename):
+			shutil.rmtree(filename)
+			return
+
 		dirn, name = split(filename)
-		with indir(filename):
-			for subFname in os.listdir(filename):
-				_zipFileAdd(zf, subFname)
+		files = [name]
 
-		shutil.rmtree(filename)
-		return
+		if isdir(f"{filename}_res"):
+			files.append(f"{name}_res")
 
-	dirn, name = split(filename)
-	files = [name]
-
-	if isdir(f"{filename}_res"):
-		files.append(f"{name}_res")
-
-	with indir(dirn):
-		for fname in files:
-			_zipFileAdd(zf, fname)
+		with indir(dirn):
+			for fname in files:
+				_zipFileAdd(zf, fname)
 
 
-def compress(glos: "GlossaryType", filename: str, compression: str) -> str:
+def compress(_glos: "GlossaryType", filename: str, compression: str) -> str:
 	"""
-	filename is the existing file path
-	supported compressions: "gz", "bz2", "lzma", "zip"
+	Filename is the existing file path.
+
+	supported compressions: "gz", "bz2", "lzma", "zip".
 	"""
 	import shutil
 	from os.path import isfile
@@ -128,14 +138,11 @@ def compress(glos: "GlossaryType", filename: str, compression: str) -> str:
 		except OSError:
 			pass
 		try:
-			zipFileOrDir(glos, filename)
+			zipFileOrDir(filename)
 		except Exception as e:
 			log.error(
-				f"{e}\nFailed to compress file \"{filename}\"",
+				f'{e}\nFailed to compress file "{filename}"',
 			)
-		#else:
-		#	if error:
-		#		log.error(error)
 	else:
 		raise ValueError(f"unexpected {compression=}")
 
@@ -147,10 +154,12 @@ def compress(glos: "GlossaryType", filename: str, compression: str) -> str:
 
 def uncompress(srcFilename: str, dstFilename: str, compression: str) -> None:
 	"""
-	filename is the existing file path
-	supported compressions: "gz", "bz2", "lzma"
+	Filename is the existing file path.
+
+	supported compressions: "gz", "bz2", "lzma".
 	"""
 	import shutil
+
 	log.info(f"Uncompressing {srcFilename!r} to {dstFilename!r}")
 
 	if compression in stdCompressions:

@@ -1,66 +1,90 @@
 #!/usr/bin/env python
+# mypy: ignore-errors
 
 import os.path
+import shlex
 import sys
+from collections.abc import Callable
 from subprocess import PIPE, Popen
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from pyglossary.glossary_types import EntryType
+if TYPE_CHECKING:
+	from pyglossary.glossary_types import EntryType, GlossaryType
+
+from pyglossary.core import log
 from pyglossary.glossary_v2 import Glossary
 from pyglossary.ui.tools.colors import reset, yellow
 from pyglossary.ui.tools.format_entry import formatEntry
 
 Glossary.init()
 
+log.setVerbosity(1)
 
-def viewGlossary(filename: str, format: "str | None" = None) -> None:
-	highlightEntry: "Callable[[EntryType], None] | None" = None
+noColor = bool(os.getenv("NO_COLOR"))
+if noColor:
+	yellow = reset = ""  # noqa: F811
+
+
+def getEntryHighlighter() -> "Callable[[EntryType], None] | None":
+	if noColor:
+		return None
 	try:
 		import pygments  # noqa: F401
 	except ModuleNotFoundError:
-		pass
-	else:
-		from pygments import highlight
-		from pygments.formatters import Terminal256Formatter as Formatter
-		from pygments.lexers import HtmlLexer, XmlLexer
+		return None
 
-		formatter = Formatter()
-		h_lexer = HtmlLexer()
-		x_lexer = XmlLexer()
+	from pygments import highlight
+	from pygments.formatters import Terminal256Formatter as Formatter
+	from pygments.lexers import HtmlLexer, XmlLexer
 
-		def highlightEntry(entry: "EntryType") -> None:
-			entry.detectDefiFormat()
-			if entry.defiFormat == "h":
-				entry._defi = highlight(entry.defi, h_lexer, formatter)
-				return
-			if entry.defiFormat == "x":
-				entry._defi = highlight(entry.defi, x_lexer, formatter)
-				return
+	formatter = Formatter()
+	h_lexer = HtmlLexer()
+	x_lexer = XmlLexer()
 
-	glos = Glossary(ui=None)
+	def highlightEntry(entry: "EntryType") -> None:
+		entry.detectDefiFormat()
+		if entry.defiFormat == "h":
+			entry._defi = highlight(entry.defi, h_lexer, formatter)
+			return
+		if entry.defiFormat == "x":
+			entry._defi = highlight(entry.defi, x_lexer, formatter)
+			return
+
+	return highlightEntry
+
+
+def viewGlossary(
+	filename: str,
+	format: "str | None" = None,
+	glos: "GlossaryType | None" = None,
+) -> None:
+	highlightEntry = getEntryHighlighter()
+
+	if glos is None:
+		glos = Glossary(ui=None)
 
 	if not glos.directRead(filename, format=format):
 		return
 
+	pagerCmd = ["less", "-R"]
+	if os.getenv("PAGER"):
+		pagerCmd = shlex.split(os.getenv("PAGER"))
 	proc = Popen(
-		[
-			"less",
-			"-R",
-		],
+		pagerCmd,
 		stdin=PIPE,
 	)
 	index = 0
+
+	entrySep = "_" * 50
 
 	def handleEntry(entry: "EntryType") -> None:
 		nonlocal index
 		if highlightEntry:
 			highlightEntry(entry)
-		str = (
-			f"{yellow}#{index}{reset} " +
-			formatEntry(entry) +
-			"\n______________________________________________\n\n"
+		entryStr = (
+			f"{yellow}#{index}{reset} " + formatEntry(entry) + "\n" + entrySep + "\n\n"
 		)
-		proc.stdin.write(str.encode("utf-8"))
+		proc.stdin.write(entryStr.encode("utf-8"))
 		if (index + 1) % 50 == 0:
 			sys.stdout.flush()
 		index += 1
@@ -69,9 +93,9 @@ def viewGlossary(filename: str, format: "str | None" = None) -> None:
 		for entry in glos:
 			try:
 				handleEntry(entry)
-			except (BrokenPipeError, IOError):
+			except (OSError, BrokenPipeError):
 				break
-	except (BrokenPipeError, IOError):
+	except (OSError, BrokenPipeError):
 		pass  # noqa: S110
 	except Exception as e:
 		print(e)

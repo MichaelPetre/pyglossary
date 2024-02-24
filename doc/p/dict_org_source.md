@@ -23,10 +23,8 @@
 | --------------- | ------- | ---- | -------------------- |
 | remove_html_all | `True`  | bool | Remove all HTML tags |
 
-
-
 ### Dictionary Applications/Tools
 
-| Name & Website                                 | Source code | License | Platforms |
-| ---------------------------------------------- | ----------- | ------- | --------- |
-| [dictfmt](https://linux.die.net/man/1/dictfmt) | ―           | GPL     | Linux     |
+| Name & Website                                 | Source code | License | Platforms | Language |
+| ---------------------------------------------- | ----------- | ------- | --------- | -------- |
+| [dictfmt](https://linux.die.net/man/1/dictfmt) | ―           | GPL     | Linux     |          |

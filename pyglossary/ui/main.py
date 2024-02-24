@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# main.py
+# mypy: ignore-errors
+# ui/main.py
 #
 # Copyright © 2008-2022 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 # This file is part of PyGlossary project, https://github.com/ilius/pyglossary
@@ -24,11 +24,10 @@ import json
 import logging
 import os
 import sys
-import typing
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-	from typing import Callable, Dict, List
+	from collections.abc import Callable
 
 	from pyglossary.option import Option
 
@@ -83,7 +82,7 @@ def canRunGUI() -> bool:
 
 class StoreConstAction(argparse.Action):
 	def __init__(
-		self: "typing.Self",
+		self,
 		option_strings: "list[str]",
 		same_dest: str = "",
 		const_value: "bool | None" = None,
@@ -102,13 +101,13 @@ class StoreConstAction(argparse.Action):
 		self.const_value = const_value
 
 	def __call__(
-		self: "typing.Self",
+		self,
 		parser: "argparse.ArgumentParser | None" = None,
 		namespace: "argparse.Namespace | None" = None,
-		values: "List" = None,
-		option_strings: "list[str]" = None,
-		required: bool = False,
-		dest: "str | None" = None,
+		values: list | None = None,  # noqa: ARG002
+		option_strings: list[str] | None = None,  # noqa: ARG002
+		required: bool = False,  # noqa: ARG002
+		dest: str | None = None,
 	) -> "StoreConstAction":
 		if not parser:
 			return self
@@ -132,7 +131,7 @@ def registerConfigOption(
 		return
 	flag = option.customFlag
 	if not flag:
-		flag = key.replace('_', '-')
+		flag = key.replace("_", "-")
 
 	if option.typ != "bool":
 		parser.add_argument(
@@ -187,13 +186,14 @@ def base_ui_run(
 	inputFormat: str = "",
 	outputFormat: str = "",
 	reverse: bool = False,
-	config: "Dict | None" = None,
-	readOptions: "Dict | None" = None,
-	writeOptions: "Dict | None" = None,
-	convertOptions: "Dict | None" = None,
-	glossarySetAttrs: "Dict | None" = None,
+	config: "dict | None" = None,
+	readOptions: "dict | None" = None,
+	writeOptions: "dict | None" = None,
+	convertOptions: "dict | None" = None,
+	glossarySetAttrs: "dict | None" = None,
 ) -> bool:
 	from pyglossary.glossary_v2 import ConvertArgs, Glossary
+
 	if reverse:
 		log.error("--reverse does not work with --ui=none")
 		return False
@@ -204,25 +204,29 @@ def base_ui_run(
 	if glossarySetAttrs:
 		for attr, value in glossarySetAttrs.items():
 			setattr(glos, attr, value)
-	glos.convert(ConvertArgs(
-		inputFilename=inputFilename,
-		outputFilename=outputFilename,
-		inputFormat=inputFormat,
-		outputFormat=outputFormat,
-		readOptions=readOptions,
-		writeOptions=writeOptions,
-		**convertOptions,
-	))
+	glos.convert(
+		ConvertArgs(
+			inputFilename=inputFilename,
+			outputFilename=outputFilename,
+			inputFormat=inputFormat,
+			outputFormat=outputFormat,
+			readOptions=readOptions,
+			writeOptions=writeOptions,
+			**convertOptions,
+		),
+	)
 	return True
 
 
 def getGitVersion(gitDir: str) -> str:
 	import subprocess
+
 	try:
-		outputB, error = subprocess.Popen(
+		outputB, _err = subprocess.Popen(
 			[
 				"git",
-				"--git-dir", gitDir,
+				"--git-dir",
+				gitDir,
 				"describe",
 				"--always",
 			],
@@ -231,12 +235,13 @@ def getGitVersion(gitDir: str) -> str:
 	except Exception as e:
 		sys.stderr.write(str(e) + "\n")
 		return ""
-	# if error is None:
+	# if _err is None:
 	return outputB.decode("utf-8").strip()
 
 
 def getVersion() -> str:
 	from pyglossary.core import rootDir
+
 	gitDir = os.path.join(rootDir, ".git")
 	if os.path.isdir(gitDir):
 		version = getGitVersion(gitDir)
@@ -296,13 +301,13 @@ def getRunner(args: "argparse.Namespace", ui_type: str) -> "Callable":
 					f"pyglossary.ui.ui_{ui_type2}",
 					fromlist=f"ui_{ui_type2}",
 				)
-			except ImportError as e:
+			except ImportError as e:  # noqa: PERF203
 				log.error(str(e))
 			else:
 				return ui_module.UI(**uiArgs).run
 		log.error(
 			"no user interface module found! "
-			f"try \"{sys.argv[0]} -h\" to see command line usage",
+			f'try "{sys.argv[0]} -h" to see command line usage',
 		)
 		sys.exit(1)
 
@@ -320,8 +325,7 @@ def main() -> None:
 	uiBase.loadConfig()
 	config = uiBase.config
 	defaultHasColor = config.get(
-		"color.enable.cmd.windows" if os.sep == "\\"
-		else "color.enable.cmd.unix",
+		"color.enable.cmd.windows" if os.sep == "\\" else "color.enable.cmd.unix",
 		True,
 	)
 
@@ -625,13 +629,12 @@ def main() -> None:
 			sys.exit(1)
 
 	if args.sortKeyName and not lookupSortKey(args.sortKeyName):
-		_valuesStr = ", ".join([_sk.name for _sk in namedSortKeyList])
+		_valuesStr = ", ".join(_sk.name for _sk in namedSortKeyList)
 		log.critical(
 			f"Invalid sortKeyName={args.sortKeyName!r}"
 			f". Supported values:\n{_valuesStr}",
 		)
 		sys.exit(1)
-
 
 	core.checkCreateConfDir()
 
@@ -641,12 +644,11 @@ def main() -> None:
 	##############################
 
 	from pyglossary.glossary_v2 import Glossary
-	from pyglossary.langs import langDict
-	from pyglossary.ui.ui_cmd import help, parseFormatOptionsStr
+	from pyglossary.ui.ui_cmd import parseFormatOptionsStr, printHelp
 
 	Glossary.init()
 
-	if log.isDebug():
+	if core.isDebug():
 		log.debug(f"en -> {langDict['en']!r}")
 
 	##############################
@@ -654,7 +656,7 @@ def main() -> None:
 	# log.info(f"PyGlossary {core.VERSION}")
 
 	if args.help:
-		help()
+		printHelp()
 		sys.exit(0)
 
 	# only used in ui_cmd for now
@@ -667,7 +669,7 @@ def main() -> None:
 			readOptions.update(newReadOptions)
 		else:
 			log.error(
-				f"invalid value for --json-read-options, "
+				"invalid value for --json-read-options, "
 				f"must be an object/dict, not {type(newReadOptions)}",
 			)
 
@@ -680,25 +682,22 @@ def main() -> None:
 			writeOptions.update(newWriteOptions)
 		else:
 			log.error(
-				f"invalid value for --json-write-options, "
+				"invalid value for --json-write-options, "
 				f"must be an object/dict, not {type(newWriteOptions)}",
 			)
 
-	"""
-		examples for read and write options:
-		--read-options testOption=stringValue
-		--read-options enableFoo=True
-		--read-options fooList=[1,2,3]
-		--read-options 'fooList=[1, 2, 3]'
-		--read-options 'testOption=stringValue; enableFoo=True; fooList=[1, 2, 3]'
-		--read-options 'testOption=stringValue;enableFoo=True;fooList=[1,2,3]'
+	# examples for read and write options:
+	# --read-options testOption=stringValue
+	# --read-options enableFoo=True
+	# --read-options fooList=[1,2,3]
+	# --read-options 'fooList=[1, 2, 3]'
+	# --read-options 'testOption=stringValue; enableFoo=True; fooList=[1, 2, 3]'
+	# --read-options 'testOption=stringValue;enableFoo=True;fooList=[1,2,3]'
 
-		if a desired value contains ";", you can use --json-read-options
-		or --json-write-options flags instead, with json object as value,
-		quoted for command line. for example:
-			'--json-write-options={"delimiter": ";"}'
-
-	"""
+	# if a desired value contains ";", you can use --json-read-options
+	# or --json-write-options flags instead, with json object as value,
+	# quoted for command line. for example:
+	# 	'--json-write-options={"delimiter": ";"}'
 
 	convertOptionsKeys = (
 		"direct",
@@ -755,7 +754,7 @@ def main() -> None:
 				f"Could not detect format for input file {args.inputFilename}",
 			)
 			sys.exit(1)
-		inputFormat = inputArgs[1]
+		inputFormat = inputArgs.formatName
 		readOptionsProp = Glossary.plugins[inputFormat].optionsProp
 		for optName, optValue in readOptions.items():
 			if optName not in Glossary.formatsReadOptions[inputFormat]:
@@ -779,7 +778,7 @@ def main() -> None:
 		)
 		if outputArgs is None:
 			sys.exit(1)
-		_, outputFormat, _ = outputArgs
+		outputFormat = outputArgs.formatName
 		writeOptionsProp = Glossary.plugins[outputFormat].optionsProp
 		for optName, optValue in writeOptions.items():
 			if optName not in Glossary.formatsWriteOptions[outputFormat]:
@@ -798,18 +797,18 @@ def main() -> None:
 	if convertOptions:
 		log.debug(f"{convertOptions = }")
 
-	runKeywordArgs = dict(
-		inputFilename=args.inputFilename,
-		outputFilename=args.outputFilename,
-		inputFormat=args.inputFormat,
-		outputFormat=args.outputFormat,
-		reverse=args.reverse,
-		config=config,
-		readOptions=readOptions,
-		writeOptions=writeOptions,
-		convertOptions=convertOptions,
-		glossarySetAttrs=None,
-	)
+	runKeywordArgs = {
+		"inputFilename": args.inputFilename,
+		"outputFilename": args.outputFilename,
+		"inputFormat": args.inputFormat,
+		"outputFormat": args.outputFormat,
+		"reverse": args.reverse,
+		"config": config,
+		"readOptions": readOptions,
+		"writeOptions": writeOptions,
+		"convertOptions": convertOptions,
+		"glossarySetAttrs": None,
+	}
 
 	run = getRunner(args, ui_type)
 	try:

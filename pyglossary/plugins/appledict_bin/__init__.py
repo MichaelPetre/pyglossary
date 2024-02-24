@@ -14,17 +14,17 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
+import os
 import re
-import typing
+from collections.abc import Iterator
 from datetime import datetime
 from io import BytesIO
-from os.path import isdir, isfile, join, split
+from operator import attrgetter
+from os.path import isdir, isfile, join, split, splitext
 from struct import unpack
 from typing import (
 	TYPE_CHECKING,
 	Any,
-	Iterator,
-	Match,
 	cast,
 )
 
@@ -44,22 +44,40 @@ from .key_data import KeyData, RawKeyData
 if TYPE_CHECKING:
 	import io
 
-	from lxml.etree import _Element as Element
-	from lxml.html import (
+	from lxml.html import (  # type: ignore
 		HtmlComment,
 		HtmlElement,
 		HtmlEntity,
 		HtmlProcessingInstruction,
 	)
 
+	from pyglossary.lxml_types import Element
+
 	from .appledict_properties import AppleDictProperties
 
 from zlib import decompress
 
+from pyglossary import core
 from pyglossary.apple_utils import substituteAppleCSS
 from pyglossary.core import log, pip
 from pyglossary.glossary_types import EntryType, GlossaryType
+from pyglossary.io_utils import nullBinaryIO
 from pyglossary.option import BoolOption, Option
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+]
 
 enable = True
 lname = "appledict_bin"
@@ -82,32 +100,41 @@ optionsProp: "dict[str, Option]" = {
 }
 
 
-class Reader(object):
+class Reader:
 	depends = {
 		"lxml": "lxml",
 		"biplist": "biplist",
-		"plistlib": "plistlib",
 	}
 
 	_html: bool = True
 	_html_full: bool = True
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	resNoExt = {
+		".data",
+		".index",
+		".plist",
+		".xsl",
+		".html",
+		".strings",
+	}
+
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos: GlossaryType = glos
 		self._dictDirPath = ""
 		self._contentsPath = ""
-		self._file: "io.BufferedIOBase | None" = None
+		self._file: "io.BufferedIOBase" = nullBinaryIO
 		self._encoding = "utf-8"
 		self._defiFormat = "m"
-		self._re_link = re.compile("<a [^<>]*>")
 		self._re_xmlns = re.compile(' xmlns:d="[^"<>]+"')
 		self._titleById: "dict[str, str]" = {}
 		self._wordCount = 0
 		self._keyTextData: "dict[ArticleAddress, list[RawKeyData]]" = {}
+		self._cssName = ""
 
 	def tostring(
-		self: "typing.Self",
-		elem: "Element | HtmlComment | HtmlElement | HtmlEntity | HtmlProcessingInstruction",
+		self,
+		elem: "Element | HtmlComment | HtmlElement | "
+		"HtmlEntity | HtmlProcessingInstruction",
 	) -> str:
 		from lxml.html import tostring as tostring
 
@@ -117,16 +144,11 @@ class Reader(object):
 			method="html",
 		).decode("utf-8")
 
-	def sub_link(self: "typing.Self", m: "Match") -> str:
-		from lxml.html import fromstring
-
-		a_raw = m.group(0)
-		a = fromstring(a_raw)
-
+	def fixLink(self, a: "Element") -> "Element":
 		href = a.attrib.get("href", "")
 
 		if href.startswith("x-dictionary:d:"):
-			word = href[len("x-dictionary:d:"):]
+			word = href[len("x-dictionary:d:") :]
 			a.attrib["href"] = href = f"bword://{word}"
 
 		elif href.startswith("x-dictionary:r:"):
@@ -144,28 +166,22 @@ class Reader(object):
 		elif href.startswith(("http://", "https://")):
 			pass
 		else:
-			a.attrib["href"] = href = f"bword://{href}"
+			a.attrib["href"] = f"bword://{href}"
+		return a
 
-		a_new = self.tostring(a)
-		a_new = a_new[:-4]  # remove "</a>"
-
-		return a_new  # noqa: RET504
-
-	def fixLinksInDefi(self: "typing.Self", defi: str) -> str:
-		return self._re_link.sub(self.sub_link, defi)
-
-	def open(self: "typing.Self", filename: str) -> "Iterator[tuple[int, int]]":
+	def open(self, filename: str) -> "Iterator[tuple[int, int]]":
 		from os.path import dirname
+
 		try:
 			from lxml import etree  # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install lxml` to install"
-			raise e
+			raise e from None
 		try:
-			import biplist  # noqa: F401
+			import biplist  # type: ignore # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install biplist` to install"
-			raise e
+			raise e from None
 
 		self._defiFormat = "h" if self._html else "m"
 
@@ -183,7 +199,7 @@ class Reader(object):
 				contentsPath = join(filename, "Contents")
 				dictDirPath = filename
 			else:
-				raise IOError(f"invalid directory {filename}")
+				raise OSError(f"invalid directory {filename}")
 		elif split(filename)[-1] == "Body.data":
 			# Maybe we should remove this support in a future release
 			parentPath = dirname(filename)
@@ -193,13 +209,13 @@ class Reader(object):
 			elif parentName == "Resources":
 				contentsPath = dirname(parentPath)
 			else:
-				raise IOError(f"invalid file path {filename}")
+				raise OSError(f"invalid file path {filename}")
 			dictDirPath = dirname(contentsPath)
 		else:
-			raise IOError(f"invalid file path {filename}")
+			raise OSError(f"invalid file path {filename}")
 
 		if not isdir(contentsPath):
-			raise IOError(
+			raise OSError(
 				f"{contentsPath} is not a folder, "
 				"Please provide 'Contents/' folder of the dictionary",
 			)
@@ -212,14 +228,13 @@ class Reader(object):
 			bodyDataPath = join(contentsPath, "Resources/Body.data")
 			keyTextDataPath = join(contentsPath, "Resources/KeyText.data")
 		else:
-			raise IOError(
+			raise OSError(
 				"could not find Body.data file, "
 				"Please provide 'Contents/' folder of the dictionary",
 			)
 
 		metadata = self.parseMetadata(infoPlistPath)
 		self.setMetadata(metadata)
-
 
 		yield from self.setKeyTextData(
 			keyTextDataPath,
@@ -240,11 +255,11 @@ class Reader(object):
 			f"number of entries: {self._wordCount}",
 		)
 
-	def parseMetadata(self: "typing.Self", infoPlistPath: str) -> "dict[str, Any]":
+	def parseMetadata(self, infoPlistPath: str) -> "dict[str, Any]":
 		import biplist
 
 		if not isfile(infoPlistPath):
-			raise IOError(
+			raise OSError(
 				"Could not find 'Info.plist' file, "
 				"Please provide 'Contents/' folder of the dictionary",
 			)
@@ -255,16 +270,17 @@ class Reader(object):
 		except (biplist.InvalidPlistException, biplist.NotBinaryPlistException):
 			try:
 				import plistlib
+
 				with open(infoPlistPath, "rb") as plist_file:
 					metadata = plistlib.loads(plist_file.read())
 			except Exception as e:
-				raise IOError(
+				raise OSError(
 					"'Info.plist' file is malformed, "
 					f"Please provide 'Contents/' with a correct 'Info.plist'. {e}",
 				) from e
 		return metadata
 
-	def setMetadata(self: "typing.Self", metadata: "dict[str, Any]") -> None:
+	def setMetadata(self, metadata: "dict[str, Any]") -> None:
 		name = metadata.get("CFBundleDisplayName")
 		if not name:
 			name = metadata.get("CFBundleIdentifier")
@@ -275,9 +291,9 @@ class Reader(object):
 		if identifier and identifier != name:
 			self._glos.setInfo("CFBundleIdentifier", identifier)
 
-		copyright = metadata.get("DCSDictionaryCopyright")
-		if copyright:
-			self._glos.setInfo("copyright", copyright)
+		_copyright = metadata.get("DCSDictionaryCopyright")
+		if _copyright:
+			self._glos.setInfo("copyright", _copyright)
 
 		author = metadata.get("DCSDictionaryManufacturerName")
 		if author:
@@ -291,8 +307,9 @@ class Reader(object):
 			self.setLangs(metadata)
 
 		self._properties = from_metadata(metadata)
+		self._cssName = self._properties.css_name or "DefaultStyle.css"
 
-	def setLangs(self: "typing.Self", metadata: "dict[str, Any]") -> None:
+	def setLangs(self, metadata: "dict[str, Any]") -> None:
 		import locale
 
 		langsList = metadata.get("DCSDictionaryLanguages")
@@ -307,80 +324,75 @@ class Reader(object):
 		targetLocale = langs["DCSDictionaryIndexLanguage"]
 		self._glos.targetLangName = locale.normalize(targetLocale).split("_")[0]
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return self._wordCount
 
-	def close(self: "typing.Self") -> None:
-		if self._file is not None:
-			self._file.close()
-			self._file = None
+	def close(self) -> None:
+		self._file.close()
+		self._file = nullBinaryIO
 
 	def _getDefi(
-		self: "typing.Self",
+		self,
 		entryElem: "Element",
-		keyDataList: "list[KeyData]",
 	) -> str:
-
 		if not self._html:
 			# FIXME: this produces duplicate text for Idioms.dictionary, see #301
-			return "".join([
-				self.tostring(child)
-				for child in entryElem.iterdescendants()
-			])
+			return "".join(
+				self.tostring(child) for child in entryElem.iterdescendants()
+			)
 
 		entryElem.tag = "div"
-		for attr in entryElem.attrib.keys():
+		for attr in entryElem.attrib:
 			# if attr == "id" or attr.endswith("title"):
 			del entryElem.attrib[attr]
 
+		for a_link in entryElem.xpath("//a"):
+			self.fixLink(a_link)
+
 		defi = self.tostring(entryElem)
-		defi = self.fixLinksInDefi(defi)
 		defi = self._re_xmlns.sub("", defi)
 
 		if self._html_full:
 			defi = (
-				f'<!DOCTYPE html><html><head>'
-				f'<link rel="stylesheet" href="style.css">'
-				f'</head><body>{defi}</body></html>'
+				"<!DOCTYPE html><html><head>"
+				'<link rel="stylesheet" href="style.css">'
+				f"</head><body>{defi}</body></html>"
 			)
 
 		return defi
 
 	def getChunkLenOffset(
-		self: "typing.Self",
+		self,
 		pos: int,
 		buffer: bytes,
 	) -> "tuple[int, int]":
 		"""
-		@return chunk byte length and offset
+		@return chunk byte length and offset.
 
 		offset is usually 4 bytes integer, that contains chunk/entry byte length
 		"""
-		offset = buffer[pos:pos + 12].find(b"<d:entry")
+		offset = buffer[pos : pos + 12].find(b"<d:entry")
 		if offset == -1:
-			print(buffer[pos:])
-			raise IOError('Could not find entry tag <d:entry>')
+			log.info(f"{buffer[pos:]=}")
+			raise OSError("Could not find entry tag <d:entry>")
 		if offset == 0:
 			# when no such info (offset equals 0) provided,
 			# we take all bytes till the closing tag or till section end
 			endI = buffer[pos:].find(b"</d:entry>\n")
-			if endI == -1:
-				chunkLen = len(buffer) - pos
-			else:
-				chunkLen = endI + 11
+			chunkLen = len(buffer) - pos if endI == -1 else endI + 11
 		else:
-			bs = buffer[pos:pos + offset]
+			bs = buffer[pos : pos + offset]
 			if offset < 4:
 				bs = b"\x00" * (4 - offset) + bs
 			try:
-				chunkLen, = unpack("i", bs)
+				(chunkLen,) = unpack("i", bs)
 			except Exception as e:
 				log.error(f"{buffer[pos:pos + 100]!r}")
-				raise e
+				raise e from None
 		return chunkLen, offset
 
 	def createEntry(
-		self: "typing.Self",
+		self,
 		entryBytes: bytes,
 		articleAddress: "ArticleAddress",
 	) -> "EntryType | None":
@@ -389,9 +401,7 @@ class Reader(object):
 		if entryRoot is None:
 			return None
 		namespaces: "dict[str, str]" = {
-			key: value
-			for key, value in entryRoot.nsmap.items()
-			if key and value
+			key: value for key, value in entryRoot.nsmap.items() if key and value
 		}
 		entryElems = entryRoot.xpath("/d:entry", namespaces=namespaces)
 		if not entryElems:
@@ -400,33 +410,21 @@ class Reader(object):
 
 		# 2. add alts
 		keyTextFieldOrder = self._properties.key_text_variable_fields
-		keyDataList: "list[KeyData]" = []
-		if articleAddress in self._keyTextData:
-			rawKeyDataList = self._keyTextData[articleAddress]
-			for rawKeyData in rawKeyDataList:
-				keyDataList.append(KeyData.fromRaw(rawKeyData, keyTextFieldOrder))
 
 		words = [word]
+
+		keyDataList: "list[KeyData]" = [
+			KeyData.fromRaw(rawKeyData, keyTextFieldOrder)
+			for rawKeyData in self._keyTextData.get(articleAddress, [])
+		]
 		if keyDataList:
 			keyDataList.sort(
-				key=lambda keyData: -keyData.priority,
+				key=attrgetter("priority"),
+				reverse=True,
 			)
-			for keyData in keyDataList:
-				alt = keyData.keyword
-				try:
-					alt.encode("utf-8")
-				except UnicodeEncodeError as e:
-					# why is this happening?
-					# example glossaries: Emojipedia, Simplified_Chinese
-					log.error(
-						f"bad unicode in {alt!r}, "
-						f"keyData={keyData.toDict()}, \n"
-						f"error: {e}",
-					)
-					continue
-				words.append(alt)
+			words += [keyData.keyword for keyData in keyDataList]
 
-		defi = self._getDefi(entryElems[0], keyDataList)
+		defi = self._getDefi(entryElems[0])
 
 		return self._glos.newEntry(
 			word=words,
@@ -436,28 +434,23 @@ class Reader(object):
 		)
 
 	def convertEntryBytesToXml(
-		self: "typing.Self",
+		self,
 		entryBytes: bytes,
 	) -> "Element | None":
-		# etree.register_namespace("d", "http://www.apple.com/DTDs/DictionaryService-1.0.rng")
-		entryFull = entryBytes.decode(self._encoding, errors="replace")
-		entryFull = entryFull.strip()
-		if not entryFull:
+		if not entryBytes.strip():
 			return None
 		try:
-			entryRoot = etree.fromstring(entryFull)
+			entryRoot = etree.fromstring(entryBytes)
 		except etree.XMLSyntaxError as e:
 			log.error(
-				f"{entryFull=}",
+				f"{entryBytes=}",
 			)
-			raise e
+			raise e from None
 		if self._limit <= 0:
 			raise ValueError(f"self._limit = {self._limit}")
 		return entryRoot
 
-	def readEntryIds(self: "typing.Self") -> None:
-		if self._file is None:
-			raise ValueError("self._file is None")
+	def readEntryIds(self) -> None:
 		titleById = {}
 		for entryBytes, _ in self.yieldEntryBytes(
 			self._file,
@@ -474,30 +467,32 @@ class Reader(object):
 			if id_j < 0:
 				log.error(f"id closing not found: {entryBytes.decode(self._encoding)}")
 				continue
-			_id = entryBytes[id_i + 4: id_j].decode(self._encoding)
+			_id = entryBytes[id_i + 4 : id_j].decode(self._encoding)
 			title_i = entryBytes.find(b'd:title="')
 			if title_i < 0:
 				log.error(f"title not found: {entryBytes.decode(self._encoding)}")
 				continue
 			title_j = entryBytes.find(b'"', title_i + 9)
 			if title_j < 0:
-				log.error(f"title closing not found: {entryBytes.decode(self._encoding)}")
+				log.error(
+					f"title closing not found: {entryBytes.decode(self._encoding)}",
+				)
 				continue
-			titleById[_id] = entryBytes[title_i + 9: title_j].decode(self._encoding)
+			titleById[_id] = entryBytes[title_i + 9 : title_j].decode(self._encoding)
 
 		self._titleById = titleById
 		self._wordCount = len(titleById)
 
 	def setKeyTextData(
-		self: "typing.Self",
+		self,
 		morphoFilePath: str,
 		properties: "AppleDictProperties",
 	) -> "Iterator[tuple[int, int]]":
 		"""
-			Prepare `KeyText.data` file for extracting morphological data
+		Prepare `KeyText.data` file for extracting morphological data.
 
-			Returns an iterator/generator for the progress
-			Sets self._keyTextData when done
+		Returns an iterator/generator for the progress
+		Sets self._keyTextData when done
 		"""
 		with open(morphoFilePath, "rb") as keyTextFile:
 			fileDataOffset, fileLimit = guessFileOffsetLimit(keyTextFile)
@@ -511,14 +506,16 @@ class Reader(object):
 				while keyTextFile.tell() < fileLimit + APPLEDICT_FILE_OFFSET:
 					compressedSectionByteLen = readInt(keyTextFile)
 					decompressedSectionByteLen = readInt(keyTextFile)
-					chunksection_bytes = decompress(
-						keyTextFile.read(compressedSectionByteLen - 4),
+					if compressedSectionByteLen == decompressedSectionByteLen == 0:
+						break
+					chunk_section_compressed = keyTextFile.read(
+						compressedSectionByteLen - 4,
 					)
+					chunksection_bytes = decompress(chunk_section_compressed)
 					buff.write(chunksection_bytes)
 					fileLimitDecompressed += decompressedSectionByteLen
-					sectionOffset += sectionLength
+					sectionOffset += max(sectionLength, compressedSectionByteLen + 4)
 					keyTextFile.seek(sectionOffset)
-					# yield (sectionOffset, fileLimit + APPLEDICT_FILE_OFFSET)
 				bufferOffset = 0
 				bufferLimit = fileLimitDecompressed
 			else:
@@ -535,15 +532,15 @@ class Reader(object):
 		)
 
 	def readKeyTextData(
-		self: "typing.Self",
+		self,
 		buff: "io.BufferedIOBase",
 		bufferOffset: int,
 		bufferLimit: int,
 		properties: "AppleDictProperties",
 	) -> "Iterator[tuple[int, int]]":
 		"""
-			Returns an iterator/generator for the progress
-			Sets self._keyTextData when done
+		Returns an iterator/generator for the progress
+		Sets self._keyTextData when done.
 		"""
 		buff.seek(bufferOffset)
 		keyTextData: "dict[ArticleAddress, list[RawKeyData]]" = {}
@@ -566,7 +563,8 @@ class Reader(object):
 					small_len = read_2_bytes_here(buff)  # 0x2c
 				curr_offset = buff.tell()
 				next_lexeme_offset = curr_offset + small_len
-				# the resulting number must match with Contents/Body.data address of the entry
+				# the resulting number must match with Contents/Body.data
+				# address of the entry
 				articleAddress: ArticleAddress
 				if properties.body_has_sections:
 					chunkOffset = readInt(buff)
@@ -583,22 +581,36 @@ class Reader(object):
 						chunkOffset=chunkOffset,
 					)
 
-				if len(properties.key_text_fixed_fields) > 0:
+				if len(properties.key_text_fixed_fields) == 0:
+					priority = 0
+					parentalControl = 0
+				elif len(properties.key_text_fixed_fields) == 1:
 					priorityAndParentalControl = read_2_bytes_here(buff)  # 0x13
-					if priorityAndParentalControl > 0x20:
+					# "DCSDictionaryLanguages" array inside plist file has a list of
+					# dictionaries inside this file
+					# This DCSPrivateFlag per each article provides not only priority
+					# and parental control, but also a flag of translation direction:
+					# 0x0-0x1f values are reserved for the first language from the
+					# DCSDictionaryLanguages array 0x20-0x3f values are reserved for
+					# the second language etc.
+					if priorityAndParentalControl >= 0x40:
 						log.error(
 							"WRONG priority or parental control:"
-							f"{priorityAndParentalControl} (section: {hex(bufferOffset)})"
+							f"{priorityAndParentalControl} (section: {bufferOffset:#x})"
 							", skipping KeyText.data file",
 						)
 						return {}
+					if priorityAndParentalControl >= 0x20:
+						priorityAndParentalControl -= 0x20
 					# d:parental-control="1"
 					parentalControl = priorityAndParentalControl % 2
 					# d:priority=".." between 0x00..0x12, priority = [0..9]
 					priority = (priorityAndParentalControl - parentalControl) // 2
 				else:
-					priority = 0
-					parentalControl = 0
+					log.error(
+						f"Unknown private field: {properties.key_text_fixed_fields}",
+					)
+					return {}
 
 				keyTextFields: "list[str]" = []
 				while buff.tell() < next_lexeme_offset:
@@ -622,26 +634,58 @@ class Reader(object):
 
 		self._keyTextData = keyTextData
 
-	def __iter__(self: "typing.Self") -> Iterator[EntryType]:
-		if self._file is None:
-			raise RuntimeError("iterating over a reader while it's not open")
-		glos = self._glos
+	def readResFile(self, fname: str, fpath: str, ext: str) -> EntryType:
+		with open(fpath, "rb") as _file:
+			data = _file.read()
+		if ext == ".css":
+			log.debug(f"substituting apple css: {fname}: {fpath}")
+			data = substituteAppleCSS(data)
+		return self._glos.newDataEntry(fname, data)
 
-		cssName = self._properties.css_name or "DefaultStyle.css"
-		contentsPath = self._contentsPath
-		for cssPathRel in (
-			cssName,
-			join("Resources", cssName),
-		):
-			cssPath = join(contentsPath, cssPathRel)
-			if not isfile(cssPath):
+	def readResDir(
+		self,
+		dirPath: str,
+		recurse: bool = False,
+		relPath: str = "",
+	) -> Iterator[EntryType]:
+		if not isdir(dirPath):
+			return
+		resNoExt = self.resNoExt
+		for fname in os.listdir(dirPath):
+			if fname == "Resources":
 				continue
-			with open(cssPath, mode="r", encoding="utf-8") as cssFile:
-				cssText = cssFile.read()
-			log.info(f"Using {cssPath =}")
-			cssText = substituteAppleCSS(cssText)
-			yield glos.newDataEntry("style.css", cssText.encode("utf-8"))
-			break
+			_, ext = splitext(fname)
+			if ext in resNoExt:
+				continue
+			fpath = join(dirPath, fname)
+			if isdir(fpath):
+				if recurse:
+					yield from self.readResDir(
+						fpath,
+						recurse=True,
+						relPath=join(relPath, fname),
+					)
+				continue
+			if not isfile(fpath):
+				continue
+			if fname == self._cssName:
+				fname = "style.css"
+			if relPath:
+				fname = relPath + "/" + fname
+			if os.path == "\\":
+				fname = fname.replace("\\", "/")
+			core.trace(log, f"Using resource {fpath!r} as {fname!r}")
+			yield self.readResFile(fname, fpath, ext)
+
+	def __iter__(self) -> Iterator[EntryType]:
+		yield from self.readResDir(
+			self._contentsPath,
+			recurse=True,
+		)
+		yield from self.readResDir(
+			join(self._contentsPath, "Resources"),
+			recurse=True,
+		)
 
 		for entryBytes, articleAddress in self.yieldEntryBytes(
 			self._file,
@@ -652,7 +696,7 @@ class Reader(object):
 				yield entry
 
 	def yieldEntryBytes(
-		self: "typing.Self",
+		self,
 		body_file: "io.BufferedIOBase",
 		properties: "AppleDictProperties",
 	) -> "Iterator[tuple[bytes, ArticleAddress]]":
@@ -677,7 +721,7 @@ class Reader(object):
 				chunkLen, offset = self.getChunkLenOffset(pos, buffer)
 				articleAddress = ArticleAddress(sectionOffset, pos)
 				pos += offset
-				entryBytes = buffer[pos:pos + chunkLen]
+				entryBytes = buffer[pos : pos + chunkLen]
 
 				pos += chunkLen
 				yield entryBytes, articleAddress

@@ -1,4 +1,6 @@
-.vscode
+import-analyzer/
+.pyre
+#.vscode
 *~
 *.py[oc]
 /build

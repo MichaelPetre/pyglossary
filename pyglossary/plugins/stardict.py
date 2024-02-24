@@ -5,6 +5,7 @@ import os
 import re
 import typing
 from collections import Counter
+from collections.abc import Callable, Generator, Iterator, Sequence
 from os.path import (
 	dirname,
 	getsize,
@@ -18,13 +19,19 @@ from os.path import (
 from pprint import pformat
 from time import time as now
 from typing import (
+	TYPE_CHECKING,
 	Any,
-	Callable,
-	Generator,
-	Iterator,
 	Literal,
-	Sequence,
+	Protocol,
+	TypeVar,
 )
+
+if TYPE_CHECKING:
+	import io
+	import sqlite3
+
+	from pyglossary.langs import Lang
+
 
 from pyglossary.core import log
 from pyglossary.flags import ALWAYS, DEFAULT_YES
@@ -41,13 +48,30 @@ from pyglossary.text_utils import (
 	uint64ToBytes,
 )
 
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+	"Writer",
+]
+
+
 enable = True
 lname = "stardict"
 format = "Stardict"
 description = "StarDict (.ifo)"
 extensions = (".ifo",)
 extensionCreate = "-stardict/"
-
+singleFile = False
 sortOnWrite = ALWAYS
 sortKeyName = "stardict"
 sortEncoding = "utf-8"
@@ -138,20 +162,54 @@ def verifySameTypeSequence(s: str) -> bool:
 	return True
 
 
-class MemList(list):
-	def sortKey(self: "typing.Self", item: "tuple[bytes, Any]") -> "tuple[bytes, bytes]":
+class XdxfTransformerType(Protocol):
+	def transformByInnerString(self, text: str) -> str:
+		...
+
+
+T_SDListItem = TypeVar("T_SDListItem", contravariant=True)
+
+
+class T_SdList(Protocol[T_SDListItem]):
+	def append(self, x: T_SDListItem) -> None:
+		...
+
+	def __len__(self) -> int:
+		...
+
+	def __iter__(self) -> "Iterator[Any]":
+		...
+
+	def sort(self) -> None:
+		...
+
+
+class MemSdList:
+	def __init__(self) -> None:
+		self._l: "list[Any]" = []
+
+	def append(self, x: Any) -> None:
+		self._l.append(x)
+
+	def __len__(self) -> int:
+		return len(self._l)
+
+	def __iter__(self) -> "Iterator[Any]":
+		return iter(self._l)
+
+	def sortKey(self, item: "tuple[bytes, Any]") -> "tuple[bytes, bytes]":
 		return (
 			item[0].lower(),
 			item[0],
 		)
 
-	def sort(self: "typing.Self") -> None:
-		list.sort(self, key=self.sortKey)
+	def sort(self) -> None:
+		self._l.sort(key=self.sortKey)
 
 
-class BaseSqList(list):
+class BaseSqList:
 	def __init__(
-		self: "typing.Self",
+		self,
 		filename: str,
 	) -> None:
 		from sqlite3 import connect
@@ -161,8 +219,9 @@ class BaseSqList(list):
 			os.rename(filename, filename + "bak")
 
 		self._filename = filename
-		self._con = connect(filename)
-		self._cur = self._con.cursor()
+
+		self._con: "sqlite3.Connection | None" = connect(filename)
+		self._cur: "sqlite3.Cursor | None" = self._con.cursor()
 
 		if not filename:
 			raise ValueError(f"invalid {filename=}")
@@ -176,14 +235,9 @@ class BaseSqList(list):
 			("word", "TEXT"),
 		] + self.getExtraColumns()
 
-		self._columnNames = ",".join([
-			col[0] for col in columns
-		])
+		self._columnNames = ",".join(col[0] for col in columns)
 
-		colDefs = ",".join([
-			f"{col[0]} {col[1]}"
-			for col in columns
-		])
+		colDefs = ",".join(f"{col[0]} {col[1]}" for col in columns)
 		self._con.execute(
 			f"CREATE TABLE data ({colDefs})",
 		)
@@ -192,29 +246,30 @@ class BaseSqList(list):
 		)
 		self._con.commit()
 
-	def getExtraColumns(self: "typing.Self") -> "list[tuple[str, str]]":
+	def getExtraColumns(self) -> "list[tuple[str, str]]":
 		# list[(columnName, dataType)]
 		return []
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return self._len
 
-	def append(self: "typing.Self", item: "Sequence") -> None:
+	def append(self, item: "Sequence") -> None:
+		if self._cur is None or self._con is None:
+			raise RuntimeError("db is closed")
 		self._len += 1
 		extraN = len(self._columns) - 1
 		self._cur.execute(
-			f"insert into data({self._columnNames})"
-			f" values (?{', ?' * extraN})",
+			f"insert into data({self._columnNames}) values (?{', ?' * extraN})",
 			[item[0].lower()] + list(item),
 		)
 		if self._len % 1000 == 0:
 			self._con.commit()
 
-	def sort(self: "typing.Self") -> None:
+	def sort(self) -> None:
 		pass
 
-	def close(self: "typing.Self") -> None:
-		if self._con is None:
+	def close(self) -> None:
+		if self._cur is None or self._con is None:
 			return
 		self._con.commit()
 		self._cur.close()
@@ -222,13 +277,15 @@ class BaseSqList(list):
 		self._con = None
 		self._cur = None
 
-	def __del__(self: "typing.Self") -> None:
+	def __del__(self) -> None:
 		try:
 			self.close()
 		except AttributeError as e:
 			log.error(str(e))
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType]":
+		if self._cur is None:
+			raise RuntimeError("db is closed")
 		query = f"SELECT * FROM data ORDER BY {self._orderBy}"
 		self._cur.execute(query)
 		for row in self._cur:
@@ -236,7 +293,7 @@ class BaseSqList(list):
 
 
 class IdxSqList(BaseSqList):
-	def getExtraColumns(self: "typing.Self") -> "list[tuple[str, str]]":
+	def getExtraColumns(self) -> "list[tuple[str, str]]":
 		# list[(columnName, dataType)]
 		return [
 			("idx_block", "BLOB"),
@@ -244,24 +301,23 @@ class IdxSqList(BaseSqList):
 
 
 class SynSqList(BaseSqList):
-	def getExtraColumns(self: "typing.Self") -> "list[tuple[str, str]]":
+	def getExtraColumns(self) -> "list[tuple[str, str]]":
 		# list[(columnName, dataType)]
 		return [
 			("entry_index", "INTEGER"),
 		]
 
 
-class Reader(object):
+class Reader:
 	_xdxf_to_html: bool = True
 	_xsl: bool = False
 	_unicode_errors: str = "strict"
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
-
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self.clear()
 
-		self._xdxfTr = None
+		self._xdxfTr: "XdxfTransformerType | None" = None
 		self._large_file = False
 
 		"""
@@ -281,34 +337,36 @@ class Reader(object):
 			a dict { entryIndex -> altList }
 		"""
 
-	def xdxf_setup(self: "typing.Self") -> None:
-		from pyglossary.xdxf_transform import XdxfTransformer, XslXdxfTransformer
+	def xdxf_setup(self) -> "XdxfTransformerType":
 		if self._xsl:
-			self._xdxfTr = XslXdxfTransformer(encoding="utf-8")
-			return
-		self._xdxfTr = XdxfTransformer(encoding="utf-8")
+			from pyglossary.xdxf.xsl_transform import XslXdxfTransformer
 
-	def xdxf_transform(self: "typing.Self", text: str) -> str:
+			return XslXdxfTransformer(encoding="utf-8")
+		from pyglossary.xdxf.transform import XdxfTransformer
+
+		return XdxfTransformer(encoding="utf-8")
+
+	def xdxf_transform(self, text: str) -> str:
 		if self._xdxfTr is None:
-			self.xdxf_setup()
+			self._xdxfTr = self.xdxf_setup()
 		return self._xdxfTr.transformByInnerString(text)
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		if self._dictFile:
 			self._dictFile.close()
 		self.clear()
 
-	def clear(self: "typing.Self") -> None:
-		self._dictFile = None
+	def clear(self) -> None:
+		self._dictFile: "io.IOBase | None" = None
 		self._filename = ""  # base file path, no extension
-		self._indexData = []
-		self._synDict = {}
+		self._indexData: "list[tuple[bytes, int, int]]" = []
+		self._synDict: "dict[int, list[str]]" = {}
 		self._sametypesequence = ""
 		self._resDir = ""
-		self._resFileNames = []
-		self._wordCount = None
+		self._resFileNames: "list[str]" = []
+		self._wordCount: "int | None" = None
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		if splitext(filename)[1].lower() == ".ifo":
 			filename = splitext(filename)[0]
 		elif isdir(filename):
@@ -335,32 +393,33 @@ class Reader(object):
 			self._resFileNames = []
 		# self.readResources()
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		if self._wordCount is None:
 			raise RuntimeError(
 				"StarDict: len(reader) called while reader is not open",
 			)
 		return self._wordCount + len(self._resFileNames)
 
-	def readIfoFile(self: "typing.Self") -> None:
-		"""
-		.ifo file is a text file in utf-8 encoding
-		"""
+	def readIfoFile(self) -> None:
+		""".ifo file is a text file in utf-8 encoding."""
 		with open(
 			self._filename + ".ifo",
-			mode="r",
-			encoding="utf-8",
-			newline="\n",
+			mode="rb",
 		) as ifoFile:
 			for line in ifoFile:
 				line = line.strip()
 				if not line:
 					continue
-				if line == "StarDict's dict ifo file":
+				if line == b"StarDict's dict ifo file":
 					continue
-				key, _, value = line.partition("=")
-				if not (key and value):
-					log.warning(f"Invalid ifo file line: {line}")
+				b_key, _, b_value = line.partition(b"=")
+				if not (b_key and b_value):
+					continue
+				try:
+					key = b_key.decode("utf-8")
+					value = b_value.decode("utf-8", errors=self._unicode_errors)
+				except UnicodeDecodeError:
+					log.error(f"ifo line is not UTF-8: {line!r}")
 					continue
 				self._glos.setInfo(key, value)
 
@@ -373,23 +432,25 @@ class Reader(object):
 			else:
 				raise ValueError(f"invalid {idxoffsetbits = }")
 
-	def readIdxFile(self: "typing.Self") -> "list[tuple[bytes, int, int]]":
+	def readIdxFile(self) -> "list[tuple[bytes, int, int]]":
 		if isfile(self._filename + ".idx.gz"):
-			with gzip.open(self._filename + ".idx.gz") as idxFile:
-				idxBytes = idxFile.read()
+			with gzip.open(self._filename + ".idx.gz") as g_file:
+				idxBytes = g_file.read()
 		else:
-			with open(self._filename + ".idx", "rb") as idxFile:
-				idxBytes = idxFile.read()
+			with open(self._filename + ".idx", "rb") as _file:
+				idxBytes = _file.read()
 
 		indexData = []
 		pos = 0
 
 		if self._large_file:
+
 			def getOffset() -> "tuple[int, int]":
-				return uint64FromBytes(idxBytes[pos:pos + 8]), pos + 8
+				return uint64FromBytes(idxBytes[pos : pos + 8]), pos + 8
 		else:
+
 			def getOffset() -> "tuple[int, int]":
-				return uint32FromBytes(idxBytes[pos:pos + 4]), pos + 4
+				return uint32FromBytes(idxBytes[pos : pos + 4]), pos + 4
 
 		while pos < len(idxBytes):
 			beg = pos
@@ -403,14 +464,14 @@ class Reader(object):
 				log.error("Index file is corrupted")
 				break
 			offset, pos = getOffset()
-			size = uint32FromBytes(idxBytes[pos:pos + 4])
+			size = uint32FromBytes(idxBytes[pos : pos + 4])
 			pos += 4
 			indexData.append((b_word, offset, size))
 
 		return indexData
 
 	def decodeRawDefiPart(
-		self: "typing.Self",
+		self,
 		b_defiPart: bytes,
 		i_type: int,
 		unicode_errors: str,
@@ -458,7 +519,7 @@ class Reader(object):
 		return _format, _defi
 
 	def renderRawDefiList(
-		self: "typing.Self",
+		self,
 		rawDefiList: "list[tuple[bytes, int]]",
 		unicode_errors: str,
 	) -> "tuple[str, str]":
@@ -489,7 +550,7 @@ class Reader(object):
 				return "\n<hr>".join(defis), _format
 			return "\n".join(defis), _format
 
-		if len(defiFormatSet) == 0:
+		if not defiFormatSet:
 			log.error(f"empty defiFormatSet, {rawDefiList=}")
 			return "", ""
 
@@ -504,7 +565,7 @@ class Reader(object):
 			defis.append(_defi)
 		return "\n<hr>\n".join(defis), "h"
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType]":
+	def __iter__(self) -> "Iterator[EntryType]":
 		indexData = self._indexData
 		synDict = self._synDict
 		sametypesequence = self._sametypesequence
@@ -524,13 +585,13 @@ class Reader(object):
 
 			dictFile.seek(defiOffset)
 			if dictFile.tell() != defiOffset:
-				log.error(f"Unable to read definition for word {b_word}")
+				log.error(f"Unable to read definition for word {b_word!r}")
 				continue
 
 			b_defiBlock = dictFile.read(defiSize)
 
 			if len(b_defiBlock) != defiSize:
-				log.error(f"Unable to read definition for word {b_word}")
+				log.error(f"Unable to read definition for word {b_word!r}")
 				continue
 
 			if sametypesequence:
@@ -542,9 +603,10 @@ class Reader(object):
 				rawDefiList = self.parseDefiBlockGeneral(b_defiBlock)
 
 			if rawDefiList is None:
-				log.error(f"Data file is corrupted. Word {b_word}")
+				log.error(f"Data file is corrupted. Word {b_word!r}")
 				continue
 
+			word: "str | list[str]"
 			word = b_word.decode("utf-8", errors=unicode_errors)
 			try:
 				alts = synDict[entryIndex]
@@ -571,24 +633,25 @@ class Reader(object):
 						_file.read(),
 					)
 
-	def readSynFile(self: "typing.Self") -> "dict[int, list[str]]":
-		"""
-		return synDict, a dict { entryIndex -> altList }
-		"""
+	def readSynFile(self) -> "dict[int, list[str]]":
+		"""Return synDict, a dict { entryIndex -> altList }."""
+		if self._wordCount is None:
+			raise RuntimeError("self._wordCount is None")
+
 		unicode_errors = self._unicode_errors
 
-		synBytes = ''
+		synBytes = b""
 		if isfile(self._filename + ".syn"):
-			with open(self._filename + ".syn", mode="rb") as synFile:
-				synBytes = synFile.read()
+			with open(self._filename + ".syn", mode="rb") as _file:
+				synBytes = _file.read()
 		elif isfile(self._filename + ".syn.dz"):
-			with gzip.open(self._filename + ".syn.dz", mode="rb") as synFile:
-				synBytes = synFile.read()
+			with gzip.open(self._filename + ".syn.dz", mode="rb") as _zfile:
+				synBytes = _zfile.read()
 		else:
 			return {}
 
 		synBytesLen = len(synBytes)
-		synDict = {}
+		synDict: "dict[int, list[str]]" = {}
 		pos = 0
 		while pos < synBytesLen:
 			beg = pos
@@ -601,12 +664,12 @@ class Reader(object):
 			if pos + 4 > len(synBytes):
 				log.error("Synonym file is corrupted")
 				break
-			entryIndex = uint32FromBytes(synBytes[pos:pos + 4])
+			entryIndex = uint32FromBytes(synBytes[pos : pos + 4])
 			pos += 4
 			if entryIndex >= self._wordCount:
 				log.error(
 					"Corrupted synonym file. "
-					f"Word {b_alt} references invalid item",
+					f"Word {b_alt!r} references invalid item",
 				)
 				continue
 
@@ -620,10 +683,10 @@ class Reader(object):
 		return synDict
 
 	def parseDefiBlockCompact(
-		self: "typing.Self",
+		self,
 		b_block: bytes,
 		sametypesequence: str,
-	) -> "list[tuple[bytes, int]]":
+	) -> "list[tuple[bytes, int]] | None":
 		"""
 		Parse definition block when sametypesequence option is specified.
 
@@ -650,11 +713,11 @@ class Reader(object):
 				# assert bytes([t]).isupper()
 				if i + 4 > len(b_block):
 					return None
-				size = uint32FromBytes(b_block[i:i + 4])
+				size = uint32FromBytes(b_block[i : i + 4])
 				i += 4
 				if i + size > len(b_block):
 					return None
-				res.append((b_block[i:i + size], t))
+				res.append((b_block[i : i + size], t))
 				i += size
 
 		if i >= len(b_block):
@@ -671,9 +734,9 @@ class Reader(object):
 		return res
 
 	def parseDefiBlockGeneral(
-		self: "typing.Self",
+		self,
 		b_block: bytes,
-	) -> "list[tuple[bytes, int]]":
+	) -> "list[tuple[bytes, int]] | None":
 		"""
 		Parse definition block when sametypesequence option is not specified.
 
@@ -699,11 +762,11 @@ class Reader(object):
 				# assert bytes([t]).isupper()
 				if i + 4 > len(b_block):
 					return None
-				size = uint32FromBytes(b_block[i:i + 4])
+				size = uint32FromBytes(b_block[i : i + 4])
 				i += 4
 				if i + size > len(b_block):
 					return None
-				res.append((b_block[i:i + size], t))
+				res.append((b_block[i : i + size], t))
 				i += size
 		return res
 
@@ -716,7 +779,7 @@ class Reader(object):
 	# 			)
 
 
-class Writer(object):
+class Writer:
 	_large_file: bool = False
 	_dictzip: bool = True
 	_sametypesequence: "Literal['', 'h', 'm', 'x'] | None" = ""
@@ -726,14 +789,14 @@ class Writer(object):
 	_audio_icon: bool = True
 	_sqlite: bool = False
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
-		self._filename = None
-		self._resDir = None
-		self._sourceLang = None
-		self._targetLang = None
+		self._filename = ""
+		self._resDir = ""
+		self._sourceLang: "Lang | None" = None
+		self._targetLang: "Lang | None" = None
 		self._p_pattern = re.compile(
-			'<p( [^<>]*?)?>(.*?)</p>',
+			"<p( [^<>]*?)?>(.*?)</p>",
 			re.DOTALL,
 		)
 		self._br_pattern = re.compile(
@@ -744,13 +807,13 @@ class Writer(object):
 			'<a (type="sound" )?([^<>]*? )?href="sound://([^<>"]+)"( .*?)?>(.*?)</a>',
 		)
 
-	def finish(self: "typing.Self") -> None:
-		self._filename = None
-		self._resDir = None
+	def finish(self) -> None:
+		self._filename = ""
+		self._resDir = ""
 		self._sourceLang = None
 		self._targetLang = None
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		log.debug(f"open: {filename = }")
 		fileBasePath = filename
 		##
@@ -787,8 +850,9 @@ class Writer(object):
 					log.info("Auto-selecting sametypesequence=h")
 					self._sametypesequence = "h"
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		from pyglossary.os_utils import runDictzip
+
 		if self._sametypesequence:
 			if self._merge_syns:
 				yield from self.writeCompactMergeSyns(self._sametypesequence)
@@ -801,8 +865,11 @@ class Writer(object):
 				yield from self.writeGeneral()
 		if self._dictzip:
 			runDictzip(f"{self._filename}.dict")
+			syn_file = f"{self._filename}.syn"
+			if not self._merge_syns and os.path.exists(syn_file):
+				runDictzip(syn_file)
 
-	def fixDefi(self: "typing.Self", defi: str, defiFormat: str) -> str:
+	def fixDefi(self, defi: str, defiFormat: str) -> str:
 		# for StarDict 3.0:
 		if self._stardict_client and defiFormat == "h":
 			defi = self._p_pattern.sub("\\2<br>", defi)
@@ -826,30 +893,29 @@ class Writer(object):
 		# defi = defi.replace(' src="./', ' src="./res/')
 		return defi
 
-	def newIdxList(self: "typing.Self") -> "IdxSqList":
+	def newIdxList(self) -> "T_SdList":
 		if not self._sqlite:
-			return MemList()
+			return MemSdList()
 		return IdxSqList(join(self._glos.tmpDataDir, "stardict-idx.db"))
 
-	def newSynList(self: "typing.Self") -> "SynSqList":
+	def newSynList(self) -> "T_SdList":
 		if not self._sqlite:
-			return MemList()
+			return MemSdList()
 		return SynSqList(join(self._glos.tmpDataDir, "stardict-syn.db"))
 
-	def dictMarkToBytesFunc(self: "typing.Self") -> "tuple[Callable, int]":
+	def dictMarkToBytesFunc(self) -> "tuple[Callable, int]":
 		if self._large_file:
-			return uint64ToBytes, 0xffffffffffffffff
+			return uint64ToBytes, 0xFFFFFFFFFFFFFFFF
 
-		return uint32ToBytes, 0xffffffff
+		return uint32ToBytes, 0xFFFFFFFF
 
-	def writeCompact(self: "typing.Self", defiFormat: str) -> None:
+	def writeCompact(self, defiFormat: str) -> "Generator[None, EntryType, None]":
 		"""
 		Build StarDict dictionary with sametypesequence option specified.
 		Every item definition consists of a single article.
 		All articles have the same format, specified in defiFormat parameter.
 
-		Parameters:
-		defiFormat - format of article definition: h - html, m - plain text
+		defiFormat: format of article definition: h - html, m - plain text
 		"""
 		log.debug(f"writeCompact: {defiFormat=}")
 		dictMark = 0
@@ -887,9 +953,12 @@ class Writer(object):
 			dictFile.write(b_dictBlock)
 			blockLen = len(b_dictBlock)
 
-			b_idxBlock = word.encode("utf-8") + b"\x00" + \
-				dictMarkToBytes(dictMark) + \
-				uint32ToBytes(blockLen)
+			b_idxBlock = (
+				word.encode("utf-8")
+				+ b"\x00"
+				+ dictMarkToBytes(dictMark)
+				+ uint32ToBytes(blockLen)
+			)
 			idxFile.write(b_idxBlock)
 
 			dictMark += blockLen
@@ -898,7 +967,7 @@ class Writer(object):
 			if dictMark > dictMarkMax:
 				log.error(
 					f"StarDict: {dictMark = } is too big, "
-					f"set option large_file=true",
+					"set option large_file=true",
 				)
 				break
 
@@ -906,7 +975,7 @@ class Writer(object):
 		idxFile.close()
 		if not os.listdir(self._resDir):
 			os.rmdir(self._resDir)
-		log.info(f"Writing dict file took {now()-t0:.2f} seconds")
+		log.info(f"Writing dict file took {now() - t0:.2f} seconds")
 
 		self.writeSynFile(altIndexList)
 		self.writeIfoFile(
@@ -915,7 +984,7 @@ class Writer(object):
 			defiFormat=defiFormat,
 		)
 
-	def writeGeneral(self: "typing.Self") -> None:
+	def writeGeneral(self) -> "Generator[None, EntryType, None]":
 		"""
 		Build StarDict dictionary in general case.
 		Every item definition may consist of an arbitrary number of articles.
@@ -930,7 +999,7 @@ class Writer(object):
 
 		t0 = now()
 		wordCount = 0
-		defiFormatCounter = Counter()
+		defiFormatCounter: "typing.Counter[str]" = Counter()
 		if not isdir(self._resDir):
 			os.mkdir(self._resDir)
 
@@ -965,9 +1034,12 @@ class Writer(object):
 			dictFile.write(b_dictBlock)
 			blockLen = len(b_dictBlock)
 
-			b_idxBlock = word.encode("utf-8") + b"\x00" + \
-				dictMarkToBytes(dictMark) + \
-				uint32ToBytes(blockLen)
+			b_idxBlock = (
+				word.encode("utf-8")
+				+ b"\x00"
+				+ dictMarkToBytes(dictMark)
+				+ uint32ToBytes(blockLen)
+			)
 			idxFile.write(b_idxBlock)
 
 			dictMark += blockLen
@@ -976,7 +1048,7 @@ class Writer(object):
 			if dictMark > dictMarkMax:
 				log.error(
 					f"StarDict: {dictMark = } is too big, "
-					f"set option large_file=true",
+					"set option large_file=true",
 				)
 				break
 
@@ -984,7 +1056,7 @@ class Writer(object):
 		idxFile.close()
 		if not os.listdir(self._resDir):
 			os.rmdir(self._resDir)
-		log.info(f"Writing dict file took {now()-t0:.2f} seconds")
+		log.info(f"Writing dict file took {now() - t0:.2f} seconds")
 		log.debug("defiFormatsCount = " + pformat(defiFormatCounter.most_common()))
 
 		self.writeSynFile(altIndexList)
@@ -994,10 +1066,8 @@ class Writer(object):
 			defiFormat="",
 		)
 
-	def writeSynFile(self: "typing.Self", altIndexList: "list[tuple[bytes, int]]") -> None:
-		"""
-		Build .syn file
-		"""
+	def writeSynFile(self, altIndexList: "T_SdList[tuple[bytes, int]]") -> None:
+		"""Build .syn file."""
 		if not altIndexList:
 			return
 
@@ -1010,26 +1080,30 @@ class Writer(object):
 		# 0.20 seconds without key function (default sort)
 
 		log.info(
-			f"Sorting {len(altIndexList)} synonyms took {now()-t0:.2f} seconds",
+			f"Sorting {len(altIndexList)} synonyms took {now() - t0:.2f} seconds",
 		)
 		log.info(f"Writing {len(altIndexList)} synonyms...")
 		t0 = now()
 		with open(self._filename + ".syn", "wb") as synFile:
-			synFile.write(b"".join([
-				b_alt + b"\x00" + uint32ToBytes(entryIndex)
-				for b_alt, entryIndex in altIndexList
-			]))
+			synFile.write(
+				b"".join(
+					b_alt + b"\x00" + uint32ToBytes(entryIndex)
+					for b_alt, entryIndex in altIndexList
+				),
+			)
 		log.info(
-			f"Writing {len(altIndexList)} synonyms took {now()-t0:.2f} seconds",
+			f"Writing {len(altIndexList)} synonyms took {now() - t0:.2f} seconds",
 		)
 
-	def writeCompactMergeSyns(self: "typing.Self", defiFormat: str) -> None:
+	def writeCompactMergeSyns(
+		self,
+		defiFormat: str,
+	) -> "Generator[None, EntryType, None]":
 		"""
 		Build StarDict dictionary with sametypesequence option specified.
 		Every item definition consists of a single article.
 		All articles have the same format, specified in defiFormat parameter.
 
-		Parameters:
 		defiFormat - format of article definition: h - html, m - plain text
 		"""
 		log.debug(f"writeCompactMergeSyns: {defiFormat=}")
@@ -1074,7 +1148,7 @@ class Writer(object):
 			if dictMark > dictMarkMax:
 				log.error(
 					f"StarDict: {dictMark = } is too big, "
-					f"set option large_file=true",
+					"set option large_file=true",
 				)
 				break
 
@@ -1083,7 +1157,7 @@ class Writer(object):
 		dictFile.close()
 		if not os.listdir(self._resDir):
 			os.rmdir(self._resDir)
-		log.info(f"Writing dict file took {now()-t0:.2f} seconds")
+		log.info(f"Writing dict file took {now() - t0:.2f} seconds")
 
 		self.writeIfoFile(
 			wordCount,
@@ -1091,7 +1165,7 @@ class Writer(object):
 			defiFormat=defiFormat,
 		)
 
-	def writeGeneralMergeSyns(self: "typing.Self") -> None:
+	def writeGeneralMergeSyns(self) -> "Generator[None, EntryType, None]":
 		"""
 		Build StarDict dictionary in general case.
 		Every item definition may consist of an arbitrary number of articles.
@@ -1106,7 +1180,7 @@ class Writer(object):
 
 		t0 = now()
 		wordCount = 0
-		defiFormatCounter = Counter()
+		defiFormatCounter: "typing.Counter[str]" = Counter()
 		if not isdir(self._resDir):
 			os.mkdir(self._resDir)
 
@@ -1147,7 +1221,7 @@ class Writer(object):
 			if dictMark > dictMarkMax:
 				log.error(
 					f"StarDict: {dictMark = } is too big, "
-					f"set option large_file=true",
+					"set option large_file=true",
 				)
 				break
 
@@ -1156,7 +1230,7 @@ class Writer(object):
 		dictFile.close()
 		if not os.listdir(self._resDir):
 			os.rmdir(self._resDir)
-		log.info(f"Writing dict file took {now()-t0:.2f} seconds")
+		log.info(f"Writing dict file took {now() - t0:.2f} seconds")
 		log.debug("defiFormatsCount = " + pformat(defiFormatCounter.most_common()))
 
 		self.writeIfoFile(
@@ -1165,7 +1239,7 @@ class Writer(object):
 			defiFormat="",
 		)
 
-	def writeIdxFile(self: "typing.Self", indexList: "list[tuple[bytes, bytes]]") -> int:
+	def writeIdxFile(self, indexList: "T_SdList[tuple[bytes, bytes]]") -> int:
 		filename = self._filename + ".idx"
 		if not indexList:
 			return 0
@@ -1175,29 +1249,24 @@ class Writer(object):
 
 		indexList.sort()
 		log.info(
-			f"Sorting {len(indexList)} {filename} took {now()-t0:.2f} seconds",
+			f"Sorting {len(indexList)} {filename} took {now() - t0:.2f} seconds",
 		)
 		log.info(f"Writing {len(indexList)} index entries...")
 		t0 = now()
 		with open(filename, mode="wb") as indexFile:
-			indexFile.write(b"".join([
-				key + b"\x00" + value
-				for key, value in indexList
-			]))
+			indexFile.write(b"".join(key + b"\x00" + value for key, value in indexList))
 		log.info(
-			f"Writing {len(indexList)} {filename} took {now()-t0:.2f} seconds",
+			f"Writing {len(indexList)} {filename} took {now() - t0:.2f} seconds",
 		)
 		return len(indexList)
 
 	def writeIfoFile(
-		self: "typing.Self",
+		self,
 		wordCount: int,
 		synWordCount: int,
-		defiFormat: "Literal['', 'h', 'm', 'x']" = "", 
+		defiFormat: str = "",
 	) -> None:
-		"""
-		Build .ifo file
-		"""
+		"""Build .ifo file."""
 		glos = self._glos
 		bookname = newlinesToSpace(glos.getInfo("name"))
 		indexFileSize = getsize(self._filename + ".idx")
@@ -1210,23 +1279,23 @@ class Writer(object):
 				bookname = f"{bookname} ({langs})"
 			log.info(f"bookname: {bookname}")
 
-		ifo = [
+		ifo: "list[tuple[str, str]]" = [
 			("version", "3.0.0"),
 			("bookname", bookname),
-			("wordcount", wordCount),
-			("idxfilesize", indexFileSize),
+			("wordcount", str(wordCount)),
+			("idxfilesize", str(indexFileSize)),
 		]
 		if self._large_file:
 			ifo.append(("idxoffsetbits", "64"))
 		if defiFormat:
 			ifo.append(("sametypesequence", defiFormat))
 		if synWordCount > 0:
-			ifo.append(("synwordcount", synWordCount))
+			ifo.append(("synwordcount", str(synWordCount)))
 
 		desc = glos.getInfo("description")
-		copyright = glos.getInfo("copyright")
-		if copyright:
-			desc = f"{copyright}\n{desc}"
+		_copyright = glos.getInfo("copyright")
+		if _copyright:
+			desc = f"{_copyright}\n{desc}"
 		publisher = glos.getInfo("publisher")
 		if publisher:
 			desc = f"Publisher: {publisher}\n{desc}"

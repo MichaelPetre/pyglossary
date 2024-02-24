@@ -1,4 +1,3 @@
-import os
 import re
 from typing import TYPE_CHECKING, cast
 
@@ -8,14 +7,12 @@ from .pinyin import convert
 from .summarize import summarize
 
 if TYPE_CHECKING:
-	from typing import Sequence
+	from collections.abc import Sequence
 
 	from pyglossary.lxml_types import T_htmlfile
 
 
 line_reg = re.compile(r"^([^ ]+) ([^ ]+) \[([^\]]+)\] /(.+)/$")
-
-script_dir = os.path.dirname(__file__)
 
 COLORS = {
 	"": "black",
@@ -68,7 +65,7 @@ def colorize(
 		return
 
 	with hf.element("div", style="display: inline-block"):
-		for syllable, tone in zip(syllables, tones):
+		for syllable, tone in zip(syllables, tones, strict=False):
 			with hf.element("font", color=COLORS[tone]):
 				hf.write(syllable)
 

@@ -27,16 +27,14 @@
 | part_of_speech_color        | `007000` | str  | Color for Part of Speech                    |
 | no_control_sequence_in_defi | `False`  | bool | No control sequence in definitions          |
 | strict_string_conversion    | `False`  | bool | Strict string conversion                    |
-| process_html_in_key         | `False`  | bool | Process HTML in (entry or info) key         |
+| process_html_in_key         | `True`   | bool | Process HTML in (entry or info) key         |
 | key_rstrip_chars            |          | str  | Characters to strip from right-side of keys |
-
-
 
 ### Dictionary Applications/Tools
 
-| Name & Website                                          | Source code | License     | Platforms      |
-| ------------------------------------------------------- | ----------- | ----------- | -------------- |
-| [Babylon Translator](https://www.babylon-software.com/) | ―           | Freemium    | Windows        |
-| [GoldenDict](http://goldendict.org/)                    | ―           | GPL         | Linux, Windows |
-| [GoldenDict Mobile (Free)](http://goldendict.mobi/)     | ―           | Freeware    | Android        |
-| [GoldenDict Mobile (Full)](http://goldendict.mobi/)     | ―           | Proprietary | Android        |
+| Name & Website                                          | Source code | License     | Platforms      | Language |
+| ------------------------------------------------------- | ----------- | ----------- | -------------- | -------- |
+| [Babylon Translator](https://www.babylon-software.com/) | ―           | Freemium    | Windows        |          |
+| [GoldenDict](http://goldendict.org/)                    | ―           | GPL         | Linux, Windows |          |
+| [GoldenDict Mobile (Free)](http://goldendict.mobi/)     | ―           | Freeware    | Android        |          |
+| [GoldenDict Mobile (Full)](http://goldendict.mobi/)     | ―           | Proprietary | Android        |          |

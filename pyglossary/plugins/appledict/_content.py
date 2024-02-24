@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2016-2019 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016 ivan tkachenko me@ratijas.tk
 # Copyright © 2012-2015 Xiaoqiang Wang <xiaoqiangwang AT gmail DOT com>
 #
 # This program is a free software; you can redistribute it and/or modify
@@ -26,10 +26,11 @@
 import logging
 import re
 from typing import Any
-from typing.re import Pattern
 from xml.sax.saxutils import quoteattr, unescape
 
 from pyglossary.text_utils import toStr
+
+__all__ = ["prepare_content"]
 
 log = logging.getLogger("pyglossary")
 
@@ -58,10 +59,7 @@ def prepare_content(
 ) -> str:
 	# heavily integrated with output of dsl reader plugin!
 	# and with xdxf also.
-	"""
-	:param title: str | None
-	"""
-
+	""":param title: str | None"""
 	# class="sec" => d:priority="2"
 	# style="color:steelblue" => class="ex"
 	# class="p" style="color:green" => class="p"
@@ -89,31 +87,82 @@ def prepare_content_without_soup(
 	body = re_div_margin_em_ex.sub(sub_div_margin_em_ex, body)
 	body = re_href.sub(href_sub, body)
 
-	body = body \
-		.replace(
+	body = (
+		body.replace(
 			'<i style="color:green">',
 			'<i class="c">',
-		) \
+		)
 		.replace(
 			'<i class="p" style="color:green">',
 			'<i class="p">',
-		) \
+		)
 		.replace(
 			'<span class="ex" style="color:steelblue">',
 			'<span class="ex">',
-		) \
+		)
 		.replace(
 			'<span class="sec ex" style="color:steelblue">',
 			'<span class="sec ex">',
-		) \
-		.replace("<u>", '<span class="u">').replace("</u>", "</span>") \
-		.replace("<s>", "<del>").replace("</s>", "</del>")
+		)
+		.replace("<u>", '<span class="u">')
+		.replace("</u>", "</span>")
+		.replace("<s>", "<del>")
+		.replace("</s>", "</del>")
+	)
 
 	# nice header to display
 	content = f"<h1>{title}</h1>{body}" if title else body
 	content = re_brhr.sub(r"<\g<1> />", content)
 	content = re_img.sub(r"<img \g<1>/>", content)
 	return content  # noqa: RET504
+
+
+def _prepare_href(tag):
+	href = tag["href"]
+	href = cleanup_link_target(href)
+
+	if href.startswith("sound:"):
+		fix_sound_link(href, tag)
+
+	elif href.startswith(("phonetics", "help:phonetics")):
+		# for oxford9
+		log.debug(f"phonetics: {tag=}")
+		if tag.audio and "name" in tag.audio.attrs:
+			tag["onmousedown"] = "this.lastChild.play(); return false;"
+			src_name = tag.audio["name"].replace("#", "_")
+			tag.audio["src"] = f"{src_name}.mp3"
+
+	elif not link_is_url(href):
+		tag["href"] = f"x-dictionary:d:{href}"
+
+
+def _prepare_onclick(soup):
+	for thumb in soup.find_all("div", "pic_thumb"):
+		thumb["onclick"] = (
+			'this.setAttribute("style", "display:none"); '
+			'this.nextElementSibling.setAttribute("style", "display:block")'
+		)
+
+	for pic in soup.find_all("div", "big_pic"):
+		pic["onclick"] = (
+			'this.setAttribute("style", "display:none"), '
+			'this.previousElementSibling.setAttribute("style", "display:block")'
+		)
+
+	# to unfold(expand) and fold(collapse) blocks
+	for pos in soup.find_all("pos", onclick="toggle_infl(this)"):
+		# TODO: simplify this!
+		pos["onclick"] = (
+			r"var e = this.parentElement.parentElement.parentElement"
+			r'.querySelector("res-g vp-gs"); style = window.'
+			r"getComputedStyle(e), display = style.getPropertyValue"
+			r'("display"), "none" === e.style.display || "none" === display'
+			r' ? e.style.display = "block" : e.style.display = "none", '
+			r"this.className.match(/(?:^|\s)Clicked(?!\S)/) ? this."
+			r"className = this.className.replace("
+			r'/(?:^|\s)Clicked(?!\S)/g, "") : this.setAttribute('
+			r'"class", "Clicked")'
+		)
 
 
 def prepare_content_with_soup(
@@ -131,14 +180,17 @@ def prepare_content_with_soup(
 		if not tag["class"]:
 			del tag["class"]
 		tag["d:priority"] = "2"
+
 	for tag in soup(lambda x: "color:steelblue" in x.get("style", "")):
 		remove_style(tag, "color:steelblue")
 		if "ex" not in tag.get("class", []):
 			tag["class"] = tag.get("class", []) + ["ex"]
+
 	for tag in soup(is_green):
 		remove_style(tag, "color:green")
 		if "p" not in tag.get("class", ""):
 			tag["class"] = tag.get("class", []) + ["c"]
+
 	for tag in soup(True):
 		if "style" in tag.attrs:
 			m = re_margin.search(tag["style"])
@@ -148,54 +200,14 @@ def prepare_content_with_soup(
 
 	for tag in soup(lambda x: "xhtml:" in x.name):
 		old_tag_name = tag.name
-		tag.name = old_tag_name[len("xhtml:"):]
+		tag.name = old_tag_name[len("xhtml:") :]
 		if tag.string:
 			tag.string = f"{tag.string} "
 
 	for tag in soup.select("[href]"):
-		href = tag["href"]
-		href = cleanup_link_target(href)
+		_prepare_href(tag)
 
-		if href.startswith("sound:"):
-			fix_sound_link(href, tag)
-
-		elif href.startswith(("phonetics", "help:phonetics")):
-			# for oxford9
-			log.debug(f"phonetics: {tag=}")
-			if tag.audio and "name" in tag.audio.attrs:
-				tag["onmousedown"] = "this.lastChild.play(); return false;"
-				src_name = tag.audio["name"].replace("#", "_")
-				tag.audio["src"] = f"{src_name}.mp3"
-
-		elif not link_is_url(href):
-			tag["href"] = f"x-dictionary:d:{href}"
-
-	for thumb in soup.find_all("div", "pic_thumb"):
-		thumb["onclick"] = (
-			'this.setAttribute("style", "display:none"); '
-			'this.nextElementSibling.setAttribute("style", "display:block")'
-		)
-
-	for pic in soup.find_all("div", "big_pic"):
-		pic["onclick"] = (
-			'this.setAttribute("style", "display:none"), '
-			'this.previousElementSibling.setAttribute("style", "display:block")'
-		)
-
-	# to unfold(expand) and fold(collapse) blocks
-	for pos in soup.find_all("pos", onclick="toggle_infl(this)"):
-		# TODO: simplify this!
-		pos["onclick"] = (
-			r'var e = this.parentElement.parentElement.parentElement'
-			r'.querySelector("res-g vp-gs"); style = window.'
-			r'getComputedStyle(e), display = style.getPropertyValue'
-			r'("display"), "none" === e.style.display || "none" === display'
-			r' ? e.style.display = "block" : e.style.display = "none", '
-			r'this.className.match(/(?:^|\s)Clicked(?!\S)/) ? this.'
-			r'className = this.className.replace('
-			r'/(?:^|\s)Clicked(?!\S)/g, "") : this.setAttribute('
-			r'"class", "Clicked")'
-		)
+	_prepare_onclick(soup)
 
 	for tag in soup.select("[src]"):
 		src = tag["src"]
@@ -221,7 +233,7 @@ def cleanup_link_target(href: str) -> str:
 	return href.removeprefix("bword://")
 
 
-def href_sub(x: "Pattern") -> str:
+def href_sub(x: "re.Match") -> str:
 	href = x.groups()[1]
 	if href.startswith("http"):
 		return x.group()
@@ -229,7 +241,8 @@ def href_sub(x: "Pattern") -> str:
 	href = cleanup_link_target(href)
 
 	return "href=" + quoteattr(
-		"x-dictionary:d:" + unescape(
+		"x-dictionary:d:"
+		+ unescape(
 			href,
 			{"&quot;": '"'},
 		),

@@ -1,16 +1,36 @@
 # -*- coding: utf-8 -*-
 
-import io
-import typing
+from collections.abc import Generator, Iterator
 from os.path import splitext
-from typing import Generator, Iterator
+from typing import TYPE_CHECKING
 
 from pyglossary.core import log
 from pyglossary.glossary_types import (
 	EntryType,
 	GlossaryType,
 )
-from pyglossary.option import Option
+from pyglossary.io_utils import nullTextIO
+
+if TYPE_CHECKING:
+	import io
+
+	from pyglossary.option import Option
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Reader",
+	"Writer",
+]
 
 enable = True
 lname = "info"
@@ -27,23 +47,22 @@ website = None
 optionsProp: "dict[str, Option]" = {}
 
 
-class Writer(object):
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+class Writer:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._filename = ""
-		self._file: "io.IOBase | None" = None
+		self._file: "io.TextIOBase" = nullTextIO
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		self._filename = filename
-		self._file = open(filename, mode="wt", encoding="utf-8")
+		self._file = open(filename, mode="w", encoding="utf-8")
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		self._filename = ""
-		if self._file:
-			self._file.close()
-			self._file = None
+		self._file.close()
+		self._file = nullTextIO
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		import re
 		from collections import Counter, OrderedDict
 
@@ -54,15 +73,17 @@ class Writer(object):
 
 		re_possible_html = re.compile(
 			r"<[a-z1-6]+[ />]",
-			re.I,
+			re.IGNORECASE,
 		)
 		re_style = re.compile(
 			r"<([a-z1-6]+)[^<>]* style=",
-			re.I | re.DOTALL,
+			re.IGNORECASE | re.DOTALL,
 		)
 
 		wordCount = 0
 		bwordCount = 0
+
+		nonLowercaseWordCount = 0
 
 		styleByTagCounter: "dict[str, int]" = Counter()
 
@@ -80,6 +101,10 @@ class Writer(object):
 
 			wordCount += 1
 			bwordCount += defi.count("bword://")
+
+			for word in entry.l_word:
+				if word.lower() != word:
+					nonLowercaseWordCount += 1
 
 			for m in re_style.finditer(defi):
 				tag = m.group(1)
@@ -100,7 +125,7 @@ class Writer(object):
 						tag = tag.strip("< />").lower()
 						allTagsCounter[tag] += 1
 			elif defiFormat == "b":
-				filenameNoExt, ext = splitext(entry.s_word)
+				_filenameNoExt, ext = splitext(entry.s_word)
 				ext = ext.lstrip(".")
 				dataEntryExtCounter[ext] += 1
 
@@ -119,57 +144,51 @@ class Writer(object):
 			info[key] = value
 		info["word_count"] = wordCount
 		info["bword_count"] = bwordCount
+		info["non_lowercase_word_count"] = nonLowercaseWordCount
 		info["data_entry_count"] = data_entry_count
 		info["data_entry_extension_count"] = ", ".join(
-			f"{ext}={count}"
-			for ext, count in
-			dataEntryExtCounter.most_common()
+			f"{ext}={count}" for ext, count in dataEntryExtCounter.most_common()
 		)
 		info["defi_format"] = ", ".join(
 			f"{defiFormat}={count}"
-			for defiFormat, count in
-			sorted(defiFormatCounter.items())
+			for defiFormat, count in sorted(defiFormatCounter.items())
 		)
 		info["defi_tag"] = ", ".join(
 			f"{defiFormat}={count}"
-			for defiFormat, count in
-			allTagsCounter.most_common()
+			for defiFormat, count in allTagsCounter.most_common()
 		)
 		info["defi_first_tag"] = ", ".join(
 			f"{defiFormat}={count}"
-			for defiFormat, count in
-			firstTagCounter.most_common()
+			for defiFormat, count in firstTagCounter.most_common()
 		)
 		info["style"] = ", ".join(
 			f"{defiFormat}={count}"
-			for defiFormat, count in
-			styleByTagCounter.most_common()
+			for defiFormat, count in styleByTagCounter.most_common()
 		)
 		info["source_script"] = ", ".join(
 			f"{defiFormat}={count}"
-			for defiFormat, count in
-			sourceScriptCounter.most_common()
+			for defiFormat, count in sourceScriptCounter.most_common()
 		)
 		self._file.write(dataToPrettyJson(info) + "\n")
 
 
-class Reader(object):
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+class Reader:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		pass
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		from pyglossary.json_utils import jsonToOrderedData
 
-		with open(filename, "r", encoding="utf-8") as infoFp:
+		with open(filename, encoding="utf-8") as infoFp:
 			info = jsonToOrderedData(infoFp.read())
 		for key, value in info.items():
 			self._glos.setInfo(key, value)
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return 0
 
-	def __iter__(self: "typing.Self") -> "Iterator[EntryType | None]":
+	def __iter__(self) -> "Iterator[EntryType | None]":
 		yield None

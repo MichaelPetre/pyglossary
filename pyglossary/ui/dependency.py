@@ -22,16 +22,17 @@
 # ^ this takes about 3 seconds
 # installed_packages = set(r.decode().split('==')[0] for r in reqs.split())
 
+__all__ = ["checkDepends"]
 
 
 def checkDepends(depends: "dict[str, str]") -> "list[str]":
-	"returns the list of uninstalled dependencies"
+	"""Return the list of non-installed dependencies."""
 	if not depends:
 		return []
-	uninstalled = []
+	not_installed = []
 	for moduleName, pkgName in depends.items():
 		try:
 			__import__(moduleName)
-		except ModuleNotFoundError:
-			uninstalled.append(pkgName)
-	return uninstalled
+		except ModuleNotFoundError:  # noqa: PERF203
+			not_installed.append(pkgName)
+	return not_installed

@@ -23,19 +23,37 @@
 # SOFTWARE.
 
 import re
-import typing
 import unicodedata
+from collections.abc import Generator
 from gzip import compress, decompress
 from operator import itemgetter
 from pathlib import Path
 from pickle import dumps, loads
-from typing import Generator
+from typing import TYPE_CHECKING
 
+from pyglossary import core
 from pyglossary.core import log, pip
 from pyglossary.flags import NEVER
-from pyglossary.glossary_types import EntryType, GlossaryType
-from pyglossary.option import Option
 from pyglossary.os_utils import indir
+
+if TYPE_CHECKING:
+	from pyglossary.glossary_types import EntryType, GlossaryType
+	from pyglossary.option import Option
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
 
 enable = True
 lname = "kobo"
@@ -43,6 +61,7 @@ format = "Kobo"
 description = "Kobo E-Reader Dictionary"
 extensions = (".kobo",)
 extensionCreate = ".kobo.zip"
+singleFile = False
 kind = "package"
 sortOnWrite = NEVER
 wiki = "https://en.wikipedia.org/wiki/Kobo_eReader"
@@ -54,28 +73,27 @@ website = (
 # https://help.kobo.com/hc/en-us/articles/360017640093-Add-new-dictionaries-to-your-Kobo-eReader
 
 
-optionsProp: "dict[str, Option]" = {
-}
+optionsProp: "dict[str, Option]" = {}
 
 
 # Penelope option: marisa_index_size=1000000
 
 
 def is_cyrillic_char(c: str) -> bool:
-	# U+0400 – U+04FF: Cyrillic
-	# U+0500 – U+052F: Cyrillic Supplement
+	# U+0400 - U+04FF: Cyrillic
+	# U+0500 - U+052F: Cyrillic Supplement
 	if "\u0400" <= c <= "\u052F":
 		return True
 
-	# U+2DE0 – U+2DFF: Cyrillic Extended-A
+	# U+2DE0 - U+2DFF: Cyrillic Extended-A
 	if "\u2DE0" <= c <= "\u2DFF":
 		return True
 
-	# U+A640 – U+A69F: Cyrillic Extended-B
+	# U+A640 - U+A69F: Cyrillic Extended-B
 	if "\uA640" <= c <= "\uA69F":
 		return True
 
-	# U+1C80 – U+1C8F: Cyrillic Extended-C
+	# U+1C80 - U+1C8F: Cyrillic Extended-C
 	if "\u1C80" <= c <= "\u1C8F":
 		return True
 
@@ -95,13 +113,13 @@ class Writer:
 		"marisa_trie": "marisa-trie",
 	}
 
-	def stripFullHtmlError(self: "typing.Self", entry: "EntryType", error: str) -> None:
+	def stripFullHtmlError(self, entry: "EntryType", error: str) -> None:
 		log.error(f"error in stripFullHtml: {error}, words={entry.l_word!r}")
 
-	def __init__(self: "typing.Self", glos: "GlossaryType", **kwargs) -> None:
+	def __init__(self, glos: "GlossaryType") -> None:
 		self._glos = glos
-		self._filename = None
-		self._words = []
+		self._filename = ""
+		self._words: "list[str]" = []
 		self._img_pattern = re.compile(
 			'<img src="([^<>"]*?)"( [^<>]*?)?>',
 			re.DOTALL,
@@ -109,7 +127,7 @@ class Writer:
 		# img tag has no closing
 		glos.stripFullHtml(errorHandler=self.stripFullHtmlError)
 
-	def get_prefix(self: "typing.Self", word: str) -> str:
+	def get_prefix(self, word: str) -> str:
 		if not word:
 			return "11"
 		wo = word[:2].strip().lower()
@@ -125,10 +143,9 @@ class Writer:
 		for c in wo:
 			if not unicodedata.category(c).startswith("L"):
 				return "11"
-		wo = wo.ljust(2, "a")
-		return wo
+		return wo.ljust(2, "a")
 
-	def fix_defi(self: "typing.Self", defi: str) -> str:
+	def fix_defi(self, defi: str) -> str:
 		# @pgaskin on #219: Kobo supports images in dictionaries,
 		# but these have a lot of gotchas
 		# (see https://pgaskin.net/dictutil/dicthtml/format.html).
@@ -139,13 +156,13 @@ class Writer:
 		# for now we just skip data entries and remove '<img' tags
 		return self._img_pattern.sub("[Image: \\1]", defi)
 
-	def write_groups(self: "typing.Self") -> None:
+	def write_groups(self) -> "Generator[None, EntryType, None]":
 		import gzip
 		from collections import OrderedDict
 
 		dataEntryCount = 0
 
-		htmlHeader = "<?xml version=\"1.0\" encoding=\"utf-8\"?><html>\n"
+		htmlHeader = '<?xml version="1.0" encoding="utf-8"?><html>\n'
 
 		groupCounter = 0
 		htmlContents = htmlHeader
@@ -154,7 +171,8 @@ class Writer:
 			nonlocal htmlContents
 			group_fname = fixFilename(lastPrefix)
 			htmlContents += "</html>"
-			log.trace(
+			core.trace(
+				log,
 				f"writeGroup: {lastPrefix!r}, "
 				f"{group_fname!r}, count={groupCounter}",
 			)
@@ -174,7 +192,7 @@ class Writer:
 				continue
 			l_word = entry.l_word
 			allWords += l_word
-			wordsByPrefix = OrderedDict()
+			wordsByPrefix: "dict[str, list[str]]" = OrderedDict()
 			for word in l_word:
 				prefix = self.get_prefix(word)
 				if prefix in wordsByPrefix:
@@ -187,14 +205,20 @@ class Writer:
 				headword, *variants = p_words
 				if headword != mainHeadword:
 					headword = f"{mainHeadword}, {headword}"
-				data.append((
-					prefix,
-					compress(dumps((
-						headword,
-						variants,
-						defi,
-					))),
-				))
+				data.append(
+					(
+						prefix,
+						compress(
+							dumps(
+								(
+									headword,
+									variants,
+									defi,
+								),
+							),
+						),
+					),
+				)
 			del entry
 
 		log.info("Kobo: sorting entries...")
@@ -211,11 +235,10 @@ class Writer:
 			lastPrefix = prefix
 
 			htmlVariants = "".join(
-				f'<variant name="{v.strip().lower()}"/>'
-				for v in variants
+				f'<variant name="{v.strip().lower()}"/>' for v in variants
 			)
 			body = f"<div><b>{headword}</b><var>{htmlVariants}</var><br/>{defi}</div>"
-			htmlContents += f"<w><a name=\"{headword}\" />{body}</w>\n"
+			htmlContents += f'<w><a name="{headword}" />{body}</w>\n'
 			groupCounter += 1
 		del data
 
@@ -230,21 +253,22 @@ class Writer:
 
 		self._words = allWords
 
-	def open(self: "typing.Self", filename: str) -> None:
+	def open(self, filename: str) -> None:
 		try:
-			import marisa_trie  # noqa: F401
+			import marisa_trie  # type: ignore # noqa: F401
 		except ModuleNotFoundError as e:
 			e.msg += f", run `{pip} install marisa-trie` to install"
 			raise e
 		self._filename = filename
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		with indir(self._filename, create=True):
 			yield from self.write_groups()
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		import marisa_trie
+
 		with indir(self._filename, create=False):
 			trie = marisa_trie.Trie(self._words)
 			trie.save(self.WORDS_FILE_NAME)
-		self._filename = None
+		self._filename = ""

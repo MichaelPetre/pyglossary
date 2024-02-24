@@ -19,19 +19,23 @@
 
 import logging
 import os
-import typing
 from os.path import isfile
 from pickle import dumps, loads
 from typing import TYPE_CHECKING
 
-from .glossary_types import EntryListType
-
 if TYPE_CHECKING:
-	from typing import Any, Callable, Iterable, Iterator
+	from collections.abc import Callable, Iterable, Iterator
+	from typing import Any
 
 	from .glossary_types import EntryType, RawEntryType
 	from .sort_keys import NamedSortKey
 
+# from typing import Self
+# typing.Self is new in Python 3.11.
+
+
+
+__all__ = ["SqEntryList"]
 
 log = logging.getLogger("pyglossary")
 
@@ -47,9 +51,9 @@ PICKLE_PROTOCOL = 4
 # https://docs.python.org/3/library/pickle.html
 
 
-class SqEntryList(EntryListType):
+class SqEntryList:
 	def __init__(
-		self: "typing.Self",
+		self,
 		entryToRaw: "Callable[[EntryType], RawEntryType]",
 		entryFromRaw: "Callable[[RawEntryType], EntryType]",
 		filename: str,
@@ -57,9 +61,9 @@ class SqEntryList(EntryListType):
 		persist: bool = False,
 	) -> None:
 		"""
-			sqliteSortKey[i] == (name, type, valueFunc)
+		sqliteSortKey[i] == (name, type, valueFunc).
 
-			persist: do not delete the file when variable is deleted
+		persist: do not delete the file when variable is deleted
 		"""
 		import sqlite3
 
@@ -83,26 +87,31 @@ class SqEntryList(EntryListType):
 		self._columnNames = ""
 
 	@property
-	def rawEntryCompress(self: "typing.Self") -> bool:
+	def rawEntryCompress(self) -> bool:
 		return False
 
 	@rawEntryCompress.setter
-	def rawEntryCompress(self: "typing.Self", enable: bool) -> None:
+	def rawEntryCompress(self, enable: bool) -> None:
 		# just to comply with EntryListType
 		pass
 
 	def setSortKey(
-		self: "typing.Self",
+		self,
 		namedSortKey: "NamedSortKey",
 		sortEncoding: "str | None",
 		writeOptions: "dict[str, Any]",
 	) -> None:
-		"""
-			sqliteSortKey[i] == (name, type, valueFunc)
-		"""
+		"""sqliteSortKey[i] == (name, type, valueFunc)."""
+		if self._con is None:
+			raise RuntimeError("self._con is None")
 
 		if self._sqliteSortKey is not None:
 			raise RuntimeError("Called setSortKey twice")
+
+		if namedSortKey.sqlite is None:
+			raise NotImplementedError(
+				f"sort key {namedSortKey.name!r} is not supported",
+			)
 
 		kwargs = writeOptions.copy()
 		if sortEncoding:
@@ -111,35 +120,30 @@ class SqEntryList(EntryListType):
 		sqliteSortKey = namedSortKey.sqlite(**kwargs)
 
 		self._sqliteSortKey = sqliteSortKey
-		self._columnNames = ",".join([
-			col[0] for col in sqliteSortKey
-		])
+		self._columnNames = ",".join(col[0] for col in sqliteSortKey)
 
 		if not self._create:
 			self._parseExistingIndex()
 			return
 
-		colDefs = ",".join([
-			f"{col[0]} {col[1]}"
-			for col in sqliteSortKey
-		] + ["pickle BLOB"])
+		colDefs = ",".join(
+			[f"{col[0]} {col[1]}" for col in sqliteSortKey] + ["pickle BLOB"],
+		)
 		self._con.execute(
 			f"CREATE TABLE data ({colDefs})",
 		)
 
-	def __len__(self: "typing.Self") -> int:
+	def __len__(self) -> int:
 		return self._len
 
-	def append(self: "typing.Self", entry: "EntryType") -> None:
+	def append(self, entry: "EntryType") -> None:
 		if self._sqliteSortKey is None:
 			raise RuntimeError("self._sqliteSortKey is None")
 		rawEntry = self._entryToRaw(entry)
 		self._len += 1
 		colCount = len(self._sqliteSortKey)
 		try:
-			values = [
-				col[2](entry.l_word) for col in self._sqliteSortKey
-			]
+			values = [col[2](entry.l_word) for col in self._sqliteSortKey]
 		except Exception:
 			log.critical(f"error in _sqliteSortKey funcs for {rawEntry = }")
 			raise
@@ -156,12 +160,12 @@ class SqEntryList(EntryListType):
 		if self._len % 1000 == 0:
 			self._con.commit()
 
-	def __iadd__(self: "typing.Self", other: "Iterable") -> "SqEntryList":
+	def __iadd__(self, other: "Iterable"):  # -> Self
 		for item in other:
 			self.append(item)
 		return self
 
-	def sort(self: "typing.Self", reverse: bool = False) -> None:
+	def sort(self, reverse: bool = False) -> None:
 		if self._sorted:
 			raise NotImplementedError("can not sort more than once")
 		if self._sqliteSortKey is None:
@@ -172,16 +176,14 @@ class SqEntryList(EntryListType):
 		sortColumnNames = self._columnNames
 		self._orderBy = sortColumnNames
 		if reverse:
-			self._orderBy = ",".join([
-				f"{col[0]} DESC" for col in self._sqliteSortKey
-			])
+			self._orderBy = ",".join(f"{col[0]} DESC" for col in self._sqliteSortKey)
 		self._con.commit()
 		self._con.execute(
 			f"CREATE INDEX sortkey ON data({sortColumnNames});",
 		)
 		self._con.commit()
 
-	def _parseExistingIndex(self: "typing.Self") -> bool:
+	def _parseExistingIndex(self) -> bool:
 		if self._cur is None:
 			return False
 		self._cur.execute("select sql FROM sqlite_master WHERE name='sortkey'")
@@ -198,22 +200,22 @@ class SqEntryList(EntryListType):
 		if j < 0:
 			log.error(f"error parsing index {sql=}")
 			return False
-		columnNames = sql[i + 1:j]
+		columnNames = sql[i + 1 : j]
 		self._sorted = True
 		self._orderBy = columnNames
 		return True
 
-	def deleteAll(self: "typing.Self") -> None:
+	def deleteAll(self) -> None:
 		if self._con is None:
 			return
 		self._con.execute("DELETE FROM data;")
 		self._con.commit()
 		self._len = 0
 
-	def clear(self: "typing.Self") -> None:
+	def clear(self) -> None:
 		self.close()
 
-	def close(self: "typing.Self") -> None:
+	def close(self) -> None:
 		if self._con is None or self._cur is None:
 			return
 		self._con.commit()
@@ -222,7 +224,7 @@ class SqEntryList(EntryListType):
 		self._con = None
 		self._cur = None
 
-	def __del__(self: "typing.Self") -> None:
+	def __del__(self) -> None:
 		try:
 			self.close()
 			if not self._persist and isfile(self._filename):
@@ -230,7 +232,7 @@ class SqEntryList(EntryListType):
 		except AttributeError as e:
 			log.error(str(e))
 
-	def __iter__(self: "typing.Self") -> "Iterator":
+	def __iter__(self) -> "Iterator[EntryType]":
 		if self._cur is None:
 			return
 		query = f"SELECT pickle FROM data ORDER BY {self._orderBy}"

@@ -3,7 +3,7 @@
 # Output to Apple Dictionary xml sources for Dictionary Development Kit.
 #
 # Copyright © 2016-2019 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016 ivan tkachenko me@ratijas.tk
 # Copyright © 2012-2015 Xiaoqiang Wang <xiaoqiangwang AT gmail DOT com>
 #
 # This program is a free software; you can redistribute it and/or modify
@@ -20,9 +20,15 @@
 
 import logging
 import string
-from typing import Any, Callable, Iterator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from collections.abc import Callable, Iterator
+	from typing import Any
 
 from . import _normalize
+
+__all__ = ["_normalize", "id_generator", "indexes_generator", "quote_string"]
 
 log = logging.getLogger("pyglossary")
 
@@ -31,8 +37,8 @@ digs = string.digits + string.ascii_letters
 
 def base36(x: int) -> str:
 	"""
-	simplified version of int2base
-	http://stackoverflow.com/questions/2267362/convert-integer-to-a-string-in-a-given-numeric-base-in-python#2267446
+	Simplified version of int2base
+	http://stackoverflow.com/questions/2267362/convert-integer-to-a-string-in-a-given-numeric-base-in-python#2267446.
 	"""
 	digits = []
 	while x:
@@ -60,17 +66,18 @@ def quote_string(value: str, BeautifulSoup: "Any") -> str:
 	return '"' + value.replace(">", "&gt;").replace('"', "&quot;") + '"'
 
 
-def indexes_generator(indexes_lang: str) -> """Callable[
+def indexes_generator(
+	indexes_lang: str,
+) -> """Callable[
 	[str, list[str], str, Any],
 	str,
 ]""":
-	"""
-	factory that acts according to glossary language
-	"""
+	"""Generate indexes according to glossary language."""
 	indexer = None
 	"""Callable[[Sequence[str], str], Sequence[str]]"""
 	if indexes_lang:
 		from . import indexes as idxs
+
 		indexer = idxs.languages.get(indexes_lang, None)
 		if not indexer:
 			keys_str = ", ".join(list(idxs.languages.keys()))
@@ -111,4 +118,5 @@ def indexes_generator(indexes_lang: str) -> """Callable[
 			quoted_idx = quote_string(idx, BeautifulSoup)
 			s += f"<d:index d:value={quoted_idx} d:title={quoted_title}/>"
 		return s
+
 	return generate_indexes

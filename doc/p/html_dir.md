@@ -29,15 +29,3 @@
 | dark            | `True`         | bool | Use dark style                                 |
 | css             |                | str  | Path to css file                               |
 | word_title      | `True`         | bool | Add headwords title to beginning of definition |
-
-
-### Dependencies for writing
-
-PyPI Links: [cachetools](https://pypi.org/project/cachetools)
-
-To install, run
-```sh
-pip3 install cachetools
-```
-
-

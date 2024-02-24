@@ -1,22 +1,18 @@
-import sys
-import typing
 import unittest
-from os.path import abspath, dirname
 
-rootDir = dirname(dirname(abspath(__file__)))
-sys.path.insert(0, rootDir)
-
-from tests.glossary_v2_test import TestGlossaryBase
+from glossary_v2_test import TestGlossaryBase
 
 
 class TestGlossaryDictionaryForMIDs(TestGlossaryBase):
-	def __init__(self: "typing.Self", *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		TestGlossaryBase.__init__(self, *args, **kwargs)
-		self.dataFileCRC32.update({
-			"100-en-fa.mids.zip": "32d1185f",
-		})
+		self.dataFileCRC32.update(
+			{
+				"100-en-fa.mids.zip": "32d1185f",
+			},
+		)
 
-	def convert_txt_mids(self: "typing.Self", fname, sha1sumDict, **convertArgs):
+	def convert_txt_mids(self, fname, sha1sumDict, **convertArgs):
 		outputFname = f"{fname}-2.mids.zip"
 		outputFpath = self.newTempFilePath(outputFname)
 		# expectedFpath = self.downloadFile(f"{fname}.mids.zip")
@@ -27,10 +23,9 @@ class TestGlossaryDictionaryForMIDs(TestGlossaryBase):
 		)
 		self.checkZipFileSha1sum(outputFpath, sha1sumDict)
 
-	def test_convert_txt_mids_1(self: "typing.Self"):
+	def test_convert_txt_mids_1(self):
 		sha1sumDict = {
-			"DictionaryForMIDs.properties": \
-				"4260a87d6cdd55622dcfe395880bc913f96102b8",
+			"DictionaryForMIDs.properties": "4260a87d6cdd55622dcfe395880bc913f96102b8",
 			"directory1.csv": "1f1ab12b107608a1513254fff3c323bbcdfbd5cf",
 			"index1.csv": "494268da410c520e56142b47610f6bbcfd53c79f",
 			"searchlist.csv": "4f4513d1550436e867e1a79dbd073a7e5bb38e32",

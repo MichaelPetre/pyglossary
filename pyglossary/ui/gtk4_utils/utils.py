@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 #
 # Copyright © 2016-2019 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 #
@@ -18,11 +19,22 @@
 import logging
 from os.path import isabs, join
 
-from gi.repository import Pango as pango
-
 from pyglossary.core import appResDir
 
 from . import gdk, glib, gtk
+
+__all__ = [
+	"HBox",
+	"VBox",
+	"dialog_add_button",
+	"gtk_event_iteration_loop",
+	"gtk_window_iteration_loop",
+	"imageFromFile",
+	"pack",
+	"rgba_parse",
+	"set_tooltip",
+	"showInfo",
+]
 
 log = logging.getLogger("pyglossary")
 
@@ -83,11 +95,11 @@ def imageFromIconName(iconName: str, size: int, nonStock=False) -> gtk.Image:
 	# But we do not use either of these two outside this function
 	# So that it's easy to switch
 	if nonStock:
-		return gtk.Image.new_from_icon_name(iconName, size)
+		return gtk.Image.new_from_icon_name(iconName)
 	try:
 		return gtk.Image.new_from_stock(iconName, size)
 	except Exception:
-		return gtk.Image.new_from_icon_name(iconName, size)
+		return gtk.Image.new_from_icon_name(iconName)
 
 
 def rgba_parse(colorStr):
@@ -101,7 +113,7 @@ def color_parse(colorStr):
 	return rgba_parse(colorStr).to_color()
 
 
-def pack(box, child, expand=False, fill=False, padding=0):
+def pack(box, child, expand=False, fill=False, padding=0):  # noqa: ARG001
 	if padding > 0:
 		print(f"pack: padding={padding} ignored")
 	if isinstance(box, gtk.Box):
@@ -120,7 +132,7 @@ def pack(box, child, expand=False, fill=False, padding=0):
 
 def dialog_add_button(
 	dialog,
-	iconName,
+	_iconName,
 	label,
 	resId,
 	onClicked=None,
@@ -131,9 +143,10 @@ def dialog_add_button(
 		use_underline=True,
 		# icon_name=iconName,
 	)
+	# fixed bug: used to ignore resId and pass gtk.ResponseType.OK
 	dialog.add_action_widget(
 		button,
-		gtk.ResponseType.OK,
+		resId,
 	)
 	if onClicked:
 		label.connect("clicked", onClicked)
@@ -148,7 +161,7 @@ def showMsg(
 	parent=None,
 	transient_for=None,
 	title="",
-	borderWidth=10,
+	borderWidth=10,  # noqa: ARG001
 	iconSize=gtk.IconSize.LARGE,
 	selectable=False,
 ):
@@ -160,30 +173,36 @@ def showMsg(
 	if title:
 		win.set_title(title)
 	hbox = HBox(spacing=10)
-	hbox.set_border_width(borderWidth)
+	# hbox.set_border_width(borderWidth)
 	if iconName:
 		# win.set_icon(...)
 		pack(hbox, imageFromIconName(iconName, iconSize))
 	label = gtk.Label(label=msg)
 	# set_line_wrap(True) makes the window go crazy tall (taller than screen)
 	# and that's the reason for label.set_size_request and win.resize
-	label.set_line_wrap(True)
-	label.set_line_wrap_mode(pango.WrapMode.WORD)
+	# label.set_line_wrap(True)
+	# label.set_line_wrap_mode(pango.WrapMode.WORD)
 	label.set_size_request(500, 1)
 	if selectable:
 		label.set_selectable(True)
 	pack(hbox, label)
-	hbox.show_all()
-	pack(win.vbox, hbox)
+	hbox.show()
+	content_area = win.get_content_area()
+	pack(content_area, hbox)
 	dialog_add_button(
 		win,
 		"gtk-close",
 		"_Close",
 		gtk.ResponseType.OK,
 	)
-	win.resize(600, 1)
-	win.run()
-	win.destroy()
+
+	def onResponse(_w, _response_id):
+		win.destroy()
+
+	win.connect("response", onResponse)
+
+	# win.resize(600, 1)
+	win.show()
 
 
 def showError(msg, **kwargs):

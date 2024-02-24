@@ -14,12 +14,13 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-from collections import namedtuple
+from typing import NamedTuple
 
-ArticleAddress = namedtuple(
-	"ArticleAddress",
-	["sectionOffset", "chunkOffset"],
-)
+__all__ = ["ArticleAddress"]
 
-# def __str__(self) -> str:
-#	return f"Addr[{hex(self.sectionOffset)}, {hex(self.chunkOffset)}]"
+class ArticleAddress(NamedTuple):
+	sectionOffset: int
+	chunkOffset: int
+
+	def __str__(self) -> str:
+		return f"Addr[{hex(self.sectionOffset)}, {hex(self.chunkOffset)}]"

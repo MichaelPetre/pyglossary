@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# appledict/__init__.py
+#
 # Output to Apple Dictionary xml sources for Dictionary Development Kit.
 #
-# Copyright © 2016-2021 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016-2023 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
+# Copyright © 2016 ivan tkachenko <me@ratijas.tk>
 # Copyright © 2012-2015 Xiaoqiang Wang <xiaoqiangwang AT gmail DOT com>
 #
 # This program is a free software; you can redistribute it and/or modify
@@ -18,14 +18,12 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 
-import io
 import os
 import pkgutil
 import shutil
 import sys
-import typing
 from os.path import basename, isdir, join
-from typing import Any, Dict, Generator
+from typing import TYPE_CHECKING, Any
 
 from pyglossary.core import log, pip
 from pyglossary.glossary_types import EntryType, GlossaryType
@@ -45,6 +43,25 @@ from ._dict import (
 	quote_string,
 )
 
+if TYPE_CHECKING:
+	import io
+	from collections.abc import Generator
+
+__all__ = [
+	"enable",
+	"lname",
+	"format",
+	"description",
+	"extensions",
+	"extensionCreate",
+	"singleFile",
+	"kind",
+	"wiki",
+	"website",
+	"optionsProp",
+	"Writer",
+]
+
 sys.setrecursionlimit(10000)
 
 enable = True
@@ -53,6 +70,7 @@ format = "AppleDict"
 description = "AppleDict Source"
 extensions = (".apple",)
 extensionCreate = ".apple/"
+singleFile = False
 kind = "directory"
 wiki = ""
 website = (
@@ -103,13 +121,14 @@ def loadBeautifulSoup() -> None:
 		import bs4 as BeautifulSoup
 	except ImportError:
 		try:
-			import BeautifulSoup
+			import BeautifulSoup  # type: ignore
 		except ImportError:
 			return
-	if int(BeautifulSoup.__version__.split(".")[0]) < 4:
+	_version: str = BeautifulSoup.__version__  # type: ignore
+	if int(_version.split(".")[0]) < 4:
 		raise ImportError(
-			f"BeautifulSoup is too old, required at least version 4, "
-			f"{BeautifulSoup.__version__!r} found.\n"
+			"BeautifulSoup is too old, required at least version 4, "
+			f"{_version!r} found.\n"
 			f"Please run `{pip} install lxml beautifulsoup4 html5lib`",
 		)
 
@@ -121,7 +140,6 @@ def abspath_or_None(path: "str | None") -> "str | None":
 
 
 def write_header(
-	glos: "GlossaryType",
 	toFile: "io.TextIOBase",
 	front_back_matter: "str | None",
 ) -> None:
@@ -135,7 +153,6 @@ def write_header(
 	if front_back_matter:
 		with open(
 			front_back_matter,
-			mode="r",
 			encoding="utf-8",
 		) as _file:
 			toFile.write(_file.read())
@@ -213,7 +230,7 @@ additional indexes to dictionary entries.
 """
 
 
-class Writer(object):
+class Writer:
 	depends = {
 		"lxml": "lxml",
 		"bs4": "beautifulsoup4",
@@ -223,27 +240,27 @@ class Writer(object):
 	_clean_html: bool = True
 	_css: str = ""
 	_xsl: str = ""
-	_default_prefs: "Dict | None" = None
+	_default_prefs: "dict | None" = None
 	_prefs_html: str = ""
 	_front_back_matter: str = ""
 	_jing: bool = False
 	_indexes: str = ""  # FIXME: rename to indexes_lang?
 
-	def __init__(self: "typing.Self", glos: GlossaryType) -> None:
+	def __init__(self, glos: GlossaryType) -> None:
 		self._glos = glos
 		self._dirname = ""
 
-	def finish(self: "typing.Self") -> None:
+	def finish(self) -> None:
 		self._dirname = ""
 
-	def open(self: "typing.Self", dirname: str) -> None:
+	def open(self, dirname: str) -> None:
 		self._dirname = dirname
 		if not isdir(dirname):
 			os.mkdir(dirname)
 
-	def write(self: "typing.Self") -> "Generator[None, EntryType, None]":
+	def write(self) -> "Generator[None, EntryType, None]":
 		global BeautifulSoup
-		from pyglossary.xdxf_transform import XdxfTransformer
+		from pyglossary.xdxf.transform import XdxfTransformer
 
 		glos = self._glos
 		clean_html = self._clean_html
@@ -263,7 +280,7 @@ class Writer(object):
 			if BeautifulSoup is None:
 				log.warning(
 					"clean_html option passed but BeautifulSoup not found. "
-					f"to fix this run "
+					"to fix this run "
 					f"`{pip} install lxml beautifulsoup4 html5lib`",
 				)
 		else:
@@ -286,7 +303,7 @@ class Writer(object):
 			os.mkdir(myResDir)
 
 		with open(filePathBase + ".xml", mode="w", encoding="utf-8") as toFile:
-			write_header(glos, toFile, front_back_matter)
+			write_header(toFile, front_back_matter)
 			while True:
 				entry = yield
 				if entry is None:
@@ -315,10 +332,10 @@ class Writer(object):
 				content = prepare_content(content_title, defi, BeautifulSoup)
 
 				toFile.write(
-					f'<d:entry id="{_id}" d:title={quoted_title}>\n' +
-					generate_indexes(long_title, alts, content, BeautifulSoup) +
-					content +
-					"\n</d:entry>\n",
+					f'<d:entry id="{_id}" d:title={quoted_title}>\n'
+					+ generate_indexes(long_title, alts, content, BeautifulSoup)
+					+ content
+					+ "\n</d:entry>\n",
 				)
 
 			toFile.write("</d:dictionary>\n")
@@ -333,19 +350,23 @@ class Writer(object):
 
 		with open(join(dirname, "Makefile"), mode="w", encoding="utf-8") as toFile:
 			toFile.write(
-				toStr(pkgutil.get_data(
-					__name__,
-					"templates/Makefile",
-				)).format(dict_name=fileNameBase),
+				toStr(
+					pkgutil.get_data(
+						__name__,
+						"templates/Makefile",
+					),
+				).format(dict_name=fileNameBase),
 			)
 
-		copyright = glos.getInfo("copyright")
+		_copyright = glos.getInfo("copyright")
 		if BeautifulSoup:
 			# strip html tags
-			copyright = str(BeautifulSoup.BeautifulSoup(
-				copyright,
-				features="lxml",
-			).text)
+			_copyright = str(
+				BeautifulSoup.BeautifulSoup(
+					_copyright,
+					features="lxml",
+				).text,
+			)
 
 		# if DCSDictionaryXSL provided but DCSDictionaryDefaultPrefs <dict/> not
 		# present in Info.plist, Dictionary.app will crash.
@@ -361,15 +382,17 @@ class Writer(object):
 			else:
 				bundle_id = glos.getInfo("CFBundleIdentifier")
 			toFile.write(
-				toStr(pkgutil.get_data(
-					__name__,
-					"templates/Info.plist",
-				)).format(
+				toStr(
+					pkgutil.get_data(
+						__name__,
+						"templates/Info.plist",
+					),
+				).format(
 					# identifier must be unique
 					CFBundleIdentifier=bundle_id,
 					CFBundleDisplayName=glos.getInfo("name"),
 					CFBundleName=fileNameBase,
-					DCSDictionaryCopyright=copyright,
+					DCSDictionaryCopyright=_copyright,
 					DCSDictionaryManufacturerName=glos.author,
 					DCSDictionaryXSL=basename(xsl) if xsl else "",
 					DCSDictionaryDefaultPrefs=format_default_prefs(default_prefs),
@@ -380,4 +403,5 @@ class Writer(object):
 
 		if jing:
 			from .jing import run as jing_run
+
 			jing_run(filePathBase + ".xml")

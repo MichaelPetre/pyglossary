@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # appledict/indexes/__init__.py
 #
-# Copyright © 2016 Ratijas <ratijas.t@me.com>
+# Copyright © 2016 ivan tkachenko me@ratijas.tk
 #
 # This program is a free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,13 +14,14 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-"""
-extended indexes generation with respect to source language.
-"""
+"""extended indexes generation with respect to source language."""
 
 import os
 import pkgutil
-from typing import Callable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from collections.abc import Callable, Sequence
 
 from pyglossary.core import log
 

@@ -4,7 +4,6 @@ import os
 import platform
 import sys
 import traceback
-import typing
 from os.path import (
 	abspath,
 	dirname,
@@ -13,19 +12,49 @@ from os.path import (
 	isfile,
 	join,
 )
-from types import TracebackType
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+	from collections.abc import Callable
+	from types import TracebackType
 	from typing import (
 		Any,
-		Callable,
 		TypeAlias,
 	)
+
 	ExcInfoType: TypeAlias = (
 		"tuple[type[BaseException], BaseException, TracebackType]"
 		" | tuple[None, None, None]"
 	)
+
+
+__all__ = [
+	"TRACE",
+	"VERSION",
+	"StdLogHandler",
+	"appResDir",
+	"cacheDir",
+	"checkCreateConfDir",
+	"confDir",
+	"confJsonFile",
+	"dataDir",
+	"format_exception",
+	"getDataDir",
+	"homeDir",
+	"homePage",
+	"isDebug",
+	"log",
+	"noColor",
+	"pip",
+	"pluginsDir",
+	"rootConfJsonFile",
+	"rootDir",
+	"sysName",
+	"tmpDir",
+	"trace",
+	"uiDir",
+	"userPluginsDir",
+]
 
 
 VERSION = "4.6.1"
@@ -38,14 +67,21 @@ logging.addLevelName(TRACE, "TRACE")
 noColor = False
 
 
+def trace(log: logging.Logger, msg: str) -> None:
+	func = getattr(log, "trace", None)
+	if func is None:
+		log.error(f"Logger {log} has no 'trace' method")
+		return
+	func(msg)
 
-class Formatter(logging.Formatter):
-	def __init__(self: "typing.Self", *args, **kwargs) -> None:  # noqa: ANN
+
+class _Formatter(logging.Formatter):
+	def __init__(self, *args, **kwargs) -> None:  # noqa: ANN101
 		logging.Formatter.__init__(self, *args, **kwargs)
 		self.fill: "Callable[[str], str] | None" = None
 
 	def formatMessage(
-		self: "typing.Self",
+		self,
 		record: "logging.LogRecord",
 	) -> str:
 		msg = logging.Formatter.formatMessage(self, record)
@@ -54,7 +90,7 @@ class Formatter(logging.Formatter):
 		return msg  # noqa: RET504
 
 
-class MyLogger(logging.Logger):
+class _MyLogger(logging.Logger):
 	levelsByVerbosity = (
 		logging.CRITICAL,
 		logging.ERROR,
@@ -64,7 +100,7 @@ class MyLogger(logging.Logger):
 		TRACE,
 		logging.NOTSET,
 	)
-	levelNamesCap = [
+	levelNamesCap = (
 		"Critical",
 		"Error",
 		"Warning",
@@ -72,53 +108,51 @@ class MyLogger(logging.Logger):
 		"Debug",
 		"Trace",
 		"All",  # "Not-Set",
-	]
+	)
 
-	def __init__(self: "typing.Self", *args) -> None:  # noqa: ANN
+	def __init__(self, *args) -> None:  # noqa: ANN101
 		logging.Logger.__init__(self, *args)
 		self._verbosity = 3
 		self._timeEnable = False
 
-	def setVerbosity(self: "typing.Self", verbosity: int) -> None:
+	def setVerbosity(self, verbosity: int) -> None:
 		self.setLevel(self.levelsByVerbosity[verbosity])
 		self._verbosity = verbosity
 
-	def getVerbosity(self: "typing.Self") -> int:
+	def getVerbosity(self) -> int:
 		return self._verbosity
 
-	def trace(self: "typing.Self", msg: str) -> None:
+	def trace(self, msg: str) -> None:
 		self.log(TRACE, msg)
 
-	def pretty(self: "typing.Self", data: "Any", header: str = "") -> None:
+	def pretty(self, data: "Any", header: str = "") -> None:
 		from pprint import pformat
+
 		self.debug(header + pformat(data))
 
-	def isDebug(self: "typing.Self") -> bool:
-		return self.getVerbosity() >= 4
-
-	def newFormatter(self: "typing.Self") -> Formatter:
+	def newFormatter(self) -> _Formatter:
 		timeEnable = self._timeEnable
 		if timeEnable:
 			fmt = "%(asctime)s [%(levelname)s] %(message)s"
 		else:
 			fmt = "[%(levelname)s] %(message)s"
-		return Formatter(fmt)
+		return _Formatter(fmt)
 
-	def setTimeEnable(self: "typing.Self", timeEnable: bool) -> None:
+	def setTimeEnable(self, timeEnable: bool) -> None:
 		self._timeEnable = timeEnable
 		formatter = self.newFormatter()
 		for handler in self.handlers:
 			handler.setFormatter(formatter)
 
-	def addHandler(self: "typing.Self", handler: "logging.Handler") -> None:
+	def addHandler(self, hdlr: "logging.Handler") -> None:
 		# if want to add separate format (new config keys and flags) for ui_gtk
 		# and ui_tk, you need to remove this function and run handler.setFormatter
 		# in ui_gtk and ui_tk
-		logging.Logger.addHandler(self, handler)
-		handler.setFormatter(self.newFormatter())
+		logging.Logger.addHandler(self, hdlr)
+		hdlr.setFormatter(self.newFormatter())
 
 
-def formatVarDict(
+def _formatVarDict(
 	dct: "dict[str, Any]",
 	indent: int = 4,
 	max_width: int = 80,
@@ -128,7 +162,7 @@ def formatVarDict(
 	for key, value in dct.items():
 		line = pre + key + " = " + repr(value)
 		if len(line) > max_width:
-			line = line[:max_width - 3] + "..."
+			line = line[: max_width - 3] + "..."
 			try:
 				value_len = len(value)
 			except TypeError:
@@ -159,9 +193,9 @@ def format_exception(
 			pass
 		else:
 			if add_locals:
-				text += f"Traceback locals:\n{formatVarDict(frame.f_locals)}\n"
+				text += f"Traceback locals:\n{_formatVarDict(frame.f_locals)}\n"
 			if add_globals:
-				text += f"Traceback globals:\n{formatVarDict(frame.f_globals)}\n"
+				text += f"Traceback globals:\n{_formatVarDict(frame.f_globals)}\n"
 
 	return text
 
@@ -175,19 +209,19 @@ class StdLogHandler(logging.Handler):
 	# 1: dark red (like 31m), 196: real red, 9: light red
 	# 15: white, 229: light yellow (#ffffaf), 226: real yellow (#ffff00)
 
-	def __init__(self: "typing.Self", noColor: bool = False) -> None:
+	def __init__(self, noColor: bool = False) -> None:
 		logging.Handler.__init__(self)
 		self.set_name("std")
 		self.noColor = noColor
 		self.config: "dict[str, Any]" = {}
 
 	@property
-	def endFormat(self: "typing.Self") -> str:
+	def endFormat(self) -> str:
 		if self.noColor:
 			return ""
 		return "\x1b[0;0;0m"
 
-	def emit(self: "typing.Self", record: logging.LogRecord) -> None:
+	def emit(self, record: logging.LogRecord) -> None:
 		msg = ""
 		if record.getMessage():
 			msg = self.format(record)
@@ -207,10 +241,7 @@ class StdLogHandler(logging.Handler):
 		###
 		levelname = record.levelname
 
-		if levelname in ("CRITICAL", "ERROR"):
-			fp = sys.stderr
-		else:
-			fp = sys.stdout
+		fp = sys.stderr if levelname in ("CRITICAL", "ERROR") else sys.stdout
 
 		if not self.noColor and levelname in self.colorsConfig:
 			key, default = self.colorsConfig[levelname]
@@ -220,8 +251,8 @@ class StdLogHandler(logging.Handler):
 
 		###
 		if fp is None:
-			print(f"fp=None, levelname={record.levelname}")
-			print(msg)
+			print(f"fp=None, levelname={record.levelname}")  # noqa: T201
+			print(msg)  # noqa: T201
 			return
 		fp.write(msg + "\n")
 		fp.flush()
@@ -242,16 +273,16 @@ def checkCreateConfDir() -> None:
 			usrF.write(srcF.read())
 
 
-def in_virtualenv() -> bool:
-	if hasattr(sys, 'real_prefix'):
+def _in_virtualenv() -> bool:
+	if hasattr(sys, "real_prefix"):
 		return True
-	if hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix:
+	if hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix:
 		return True
 	return False
 
 
 def getDataDir() -> str:
-	if in_virtualenv():
+	if _in_virtualenv():
 		pass  # TODO
 		# print(f"prefix={sys.prefix}, base_prefix={sys.base_prefix}")
 		# return join(
@@ -287,21 +318,28 @@ def getDataDir() -> str:
 	if isdir(_dir):
 		return _dir
 
-	if (CONDA_PREFIX := os.getenv("CONDA_PREFIX")):
+	if CONDA_PREFIX := os.getenv("CONDA_PREFIX"):
 		_dir = join(CONDA_PREFIX, "share", "pyglossary")
 		if isdir(_dir):
 			return _dir
 
 	raise OSError("failed to detect dataDir")
 
+
 # __________________________________________________________________________ #
 
 
-logging.setLoggerClass(MyLogger)
-log = cast(MyLogger, logging.getLogger("pyglossary"))
+logging.setLoggerClass(_MyLogger)
+log = cast(_MyLogger, logging.getLogger("pyglossary"))
+
+
+def isDebug() -> bool:
+	return log.getVerbosity() >= 4  # noqa: PLR2004
+
 
 if os.sep == "\\":
-	def windows_show_exception(
+
+	def _windows_show_exception(
 		_type: "type[BaseException]",
 		exc: "BaseException",
 		tback: "TracebackType | None",
@@ -309,31 +347,35 @@ if os.sep == "\\":
 		if not (_type and exc and tback):
 			return
 		import ctypes
+
 		msg = format_exception(
 			exc_info=(_type, exc, tback),
 			add_locals=(log.level <= logging.DEBUG),
 			add_globals=False,
 		)
 		log.critical(msg)
-		ctypes.windll.user32.MessageBoxW(0, msg, "PyGlossary Error", 0)
+		ctypes.windll.user32.MessageBoxW(0, msg, "PyGlossary Error", 0)  # type: ignore
 
-	sys.excepthook = windows_show_exception
+	sys.excepthook = _windows_show_exception
 
 else:
-	def unix_show_exception(
+
+	def _unix_show_exception(
 		_type: "type[BaseException]",
 		exc: "BaseException",
 		tback: "TracebackType | None",
 	) -> None:
 		if not (_type and exc and tback):
 			return
-		log.critical(format_exception(
-			exc_info=(_type, exc, tback),
-			add_locals=(log.level <= logging.DEBUG),
-			add_globals=False,
-		))
+		log.critical(
+			format_exception(
+				exc_info=(_type, exc, tback),
+				add_locals=(log.level <= logging.DEBUG),
+				add_globals=False,
+			),
+		)
 
-	sys.excepthook = unix_show_exception
+	sys.excepthook = _unix_show_exception
 
 sysName = platform.system().lower()
 # platform.system() is in	["Linux", "Windows", "Darwin", "FreeBSD"]
@@ -342,9 +384,10 @@ sysName = platform.system().lower()
 
 # can set env var WARNINGS to:
 # "error", "ignore", "always", "default", "module", "once"
-if (WARNINGS := os.getenv("WARNINGS")):
-	if WARNINGS in ('default', 'error', 'ignore', 'always', 'module', 'once'):
+if WARNINGS := os.getenv("WARNINGS"):
+	if WARNINGS in ("default", "error", "ignore", "always", "module", "once"):
 		import warnings
+
 		warnings.filterwarnings(WARNINGS)  # type: ignore # noqa: PGH003
 	else:
 		log.error(f"invalid env var {WARNINGS = }")
@@ -365,9 +408,6 @@ appResDir = join(dataDir, "res")
 
 if os.sep == "/":  # Operating system is Unix-Like
 	homeDir = os.getenv("HOME", "/")
-	user = os.getenv("USER")
-	if user is None:
-		raise OSError("no $USER")
 	tmpDir = os.getenv("TMPDIR", "/tmp")  # noqa: S108
 	if sysName == "darwin":  # MacOS X
 		_libDir = join(homeDir, "Library")
@@ -384,16 +424,12 @@ if os.sep == "/":  # Operating system is Unix-Like
 		# which generally means ~/.config/pyglossary
 		confDir = join(homeDir, ".pyglossary")
 		cacheDir = join(homeDir, ".cache", "pyglossary")
-		if "/com.termux/" in homeDir:
-			pip = "pip3"
-		else:
-			pip = "sudo pip3"
+		pip = "pip3" if "/com.termux/" in homeDir else "sudo pip3"
 elif os.sep == "\\":  # Operating system is Windows
 	# FIXME: default values
 	_HOMEDRIVE = os.getenv("HOMEDRIVE", "")
 	_HOMEPATH = os.getenv("HOMEPATH", "")
 	homeDir = join(_HOMEDRIVE, _HOMEPATH)
-	user = os.getenv("USERNAME", "")
 	tmpDir = os.getenv("TEMP", "")
 	_appData = os.getenv("APPDATA", "")
 	confDir = join(_appData, "PyGlossary")
@@ -406,7 +442,7 @@ elif os.sep == "\\":  # Operating system is Windows
 else:
 	raise RuntimeError(
 		f"Unknown path separator(os.sep=={os.sep!r})"
-		f", unknown operating system!",
+		", unknown operating system!",
 	)
 
 pluginsDir = join(rootDir, "pyglossary", "plugins")

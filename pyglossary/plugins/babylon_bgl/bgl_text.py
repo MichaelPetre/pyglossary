@@ -22,12 +22,27 @@
 
 import re
 
+from pyglossary import core
 from pyglossary.core import log
 from pyglossary.xml_utils import xml_escape
 
-u_pat_html_entry = re.compile("(?:&#x|&#|&)(\\w+);?", re.I)
-u_pat_html_entry_key = re.compile("(?:&#x|&#|&)(\\w+);", re.I)
-b_pat_ascii_char_ref = re.compile(b"(&#\\w+;)", re.I)
+__all__ = [
+	"fixImgLinks",
+	"normalizeNewlines",
+	"removeControlChars",
+	"removeNewlines",
+	"replaceAsciiCharRefs",
+	"replaceHtmlEntries",
+	"replaceHtmlEntriesInKeys",
+	"stripDollarIndexes",
+	"stripHtmlTags",
+	"unknownHtmlEntries",
+]
+
+
+u_pat_html_entry = re.compile("(?:&#x|&#|&)(\\w+);?", re.IGNORECASE)
+u_pat_html_entry_key = re.compile("(?:&#x|&#|&)(\\w+);", re.IGNORECASE)
+b_pat_ascii_char_ref = re.compile(b"(&#\\w+;)", re.IGNORECASE)
 u_pat_newline_escape = re.compile("[\\r\\n\\\\]")
 u_pat_strip_tags = re.compile("(?:<[/a-zA-Z].*?(?:>|$))+")
 u_pat_control_chars = re.compile("[\x00-\x08\x0c\x0e-\x1f]")
@@ -39,7 +54,7 @@ unknownHtmlEntries = set()
 def replaceHtmlEntryNoEscapeCB(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
-	Replace character entity with the corresponding character
+	Replace character entity with the corresponding character.
 
 	Return the original string if conversion fails.
 	Use this as a replace function of re.sub.
@@ -48,18 +63,16 @@ def replaceHtmlEntryNoEscapeCB(u_match: "re.Match") -> str:
 
 	u_text = u_match.group(0)
 	u_name = u_match.group(1)
-	if log.isDebug():
-		assert isinstance(u_text, str) and isinstance(u_name, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
+		assert isinstance(u_name, str)
 
 	if u_text[:2] == "&#":
 		# character reference
 		try:
-			if u_text[:3].lower() == "&#x":
-				code = int(u_name, 16)
-			else:
-				code = int(u_name)
+			code = int(u_name, 16) if u_text[:3].lower() == "&#x" else int(u_name)
 			if code <= 0:
-				raise ValueError()
+				raise ValueError(f"{code = }")
 			return chr(code)
 		except (ValueError, OverflowError):
 			return chr(0xFFFD)  # replacement character
@@ -88,7 +101,7 @@ def replaceHtmlEntryNoEscapeCB(u_match: "re.Match") -> str:
 def replaceHtmlEntryCB(u_match: "re.Match") -> str:
 	"""
 	u_match: instance of _sre.SRE_Match
-	Same as replaceHtmlEntryNoEscapeCB, but escapes result string
+	Same as replaceHtmlEntryNoEscapeCB, but escapes result string.
 
 	Only <, >, & characters are escaped.
 	"""
@@ -99,20 +112,15 @@ def replaceHtmlEntryCB(u_match: "re.Match") -> str:
 	return xml_escape(u_res, quotation=False)
 
 
-def replaceDingbat(u_match: "re.Match") -> str:
-	"""
-	u_match: instance of _sre.SRE_Match
-	replace chars \\u008c-\\u0095 with \\u2776-\\u277f
-	"""
-	ch = u_match.group(0)
-	code = ch + 0x2776 - 0x8c
-	return chr(code)
+# def replaceDingbat(u_match: "re.Match") -> str:
+# 	r"""Replace chars \\u008c-\\u0095 with \\u2776-\\u277f."""
+# 	ch = u_match.group(0)
+# 	code = ch + 0x2776 - 0x8C
+# 	return chr(code)
 
 
 def escapeNewlinesCallback(u_match: "re.Match") -> str:
-	"""
-	u_match: instance of _sre.SRE_Match
-	"""
+	"""u_match: instance of _sre.SRE_Match."""
 	ch = u_match.group(0)
 	if ch == "\n":
 		return "\\n"
@@ -127,8 +135,8 @@ def replaceHtmlEntries(u_text: str) -> str:
 	# &ldash;
 	# &#0147;
 	# &#x010b;
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_html_entry.sub(
 		replaceHtmlEntryCB,
 		u_text,
@@ -139,8 +147,8 @@ def replaceHtmlEntriesInKeys(u_text: str) -> str:
 	# &ldash;
 	# &#0147;
 	# &#x010b;
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_html_entry_key.sub(
 		replaceHtmlEntryNoEscapeCB,
 		u_text,
@@ -149,12 +157,12 @@ def replaceHtmlEntriesInKeys(u_text: str) -> str:
 
 def escapeNewlines(u_text: str) -> str:
 	r"""
-	convert text to c-escaped string:
+	Convert text to c-escaped string:
 	\ -> \\
-	new line -> \n or \r
+	new line -> \n or \r.
 	"""
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_newline_escape.sub(
 		escapeNewlinesCallback,
 		u_text,
@@ -162,8 +170,8 @@ def escapeNewlines(u_text: str) -> str:
 
 
 def stripHtmlTags(u_text: str) -> str:
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_strip_tags.sub(
 		" ",
 		u_text,
@@ -175,8 +183,8 @@ def removeControlChars(u_text: str) -> str:
 	# \x0a - line feed
 	# \x0b - vertical tab
 	# \x0d - carriage return
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_control_chars.sub(
 		"",
 		u_text,
@@ -184,8 +192,8 @@ def removeControlChars(u_text: str) -> str:
 
 
 def removeNewlines(u_text: str) -> str:
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_newline.sub(
 		" ",
 		u_text,
@@ -193,34 +201,33 @@ def removeNewlines(u_text: str) -> str:
 
 
 def normalizeNewlines(u_text: str) -> str:
-	"""
-	convert new lines to unix style and remove consecutive new lines
-	"""
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	"""Convert new lines to unix style and remove consecutive new lines."""
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_pat_newline.sub(
 		"\n",
 		u_text,
 	)
 
 
-def replaceAsciiCharRefs(b_text: bytes, encoding: str) -> bytes:
+def replaceAsciiCharRefs(b_text: bytes) -> bytes:
 	# &#0147;
 	# &#x010b;
-	if log.isDebug():
-		assert isinstance(b_text, bytes)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(b_text, bytes)
 	b_parts = b_pat_ascii_char_ref.split(b_text)
 	for i_part, b_part in enumerate(b_parts):
 		if i_part % 2 != 1:
 			continue
 		# reference
 		try:
-			if b_part[:3].lower() == "&#x":
-				code = int(b_part[3:-1], 16)
-			else:
-				code = int(b_part[2:-1])
+			code = (
+				int(b_part[3:-1], 16)
+				if b_part[:3].lower() == "&#x"
+				else int(b_part[2:-1])
+			)
 			if code <= 0:
-				raise ValueError()
+				raise ValueError(f"{code = }")
 		except (ValueError, OverflowError):
 			code = -1
 		if code < 128 or code > 255:
@@ -231,8 +238,8 @@ def replaceAsciiCharRefs(b_text: bytes, encoding: str) -> bytes:
 
 
 def fixImgLinks(u_text: str) -> str:
-	"""
-	Fix img tag links
+	r"""
+	Fix img tag links.
 
 	src attribute value of image tag is often enclosed in \x1e - \x1f
 	characters.
@@ -244,14 +251,14 @@ def fixImgLinks(u_text: str) -> str:
 	Control characters \x1e and \x1f are useless in html text, so we may
 	safely remove all of them, irrespective of context.
 	"""
-	if log.isDebug():
-		assert isinstance(u_text, str)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(u_text, str)
 	return u_text.replace("\x1e", "").replace("\x1f", "")
 
 
 def stripDollarIndexes(b_word: bytes) -> "tuple[bytes, int]":
-	if log.isDebug():
-		assert isinstance(b_word, bytes)  # noqa: S101
+	if core.isDebug():
+		assert isinstance(b_word, bytes)
 	i = 0
 	b_word_main = b""
 	strip_count = 0  # number of sequences found
@@ -268,21 +275,19 @@ def stripDollarIndexes(b_word: bytes) -> "tuple[bytes, int]":
 			# )
 			b_word_main += b_word[i:]
 			break
-		if d1 == d0 + 1:
-			"""
-			You may find keys (or alternative keys) like these:
-			sur l'arbre$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-			obscurantiste$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-			They all end on a sequence of b'$', key length including dollars
-			is always 60 chars.
-			You may find keys like these:
-			extremidade-$$$-$$$-linha
-			.FIRM$$$$$$$$$$$$$
-			etc
 
-			summary: we must remove any sequence of dollar signs longer
-			than 1 chars
-			"""
+		# You may find keys (or alternative keys) like these:
+		# sur l'arbre$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+		# obscurantiste$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+		# They all end on a sequence of b'$', key length including dollars
+		# is always 60 chars.
+		# You may find keys like these:
+		# extremidade-$$$-$$$-linha
+		# .FIRM$$$$$$$$$$$$$
+		# etc
+		# summary: we must remove any sequence of dollar signs longer
+		# than 1 chars
+		if d1 == d0 + 1:
 			# log.debug(f"stripDollarIndexes({b_word}):\nfound $$")
 			b_word_main += b_word[i:d0]
 			i = d1 + 1
@@ -291,27 +296,26 @@ def stripDollarIndexes(b_word: bytes) -> "tuple[bytes, int]":
 			if i >= len(b_word):
 				break
 			continue
-		if b_word[d0 + 1:d1].strip(b"0123456789"):
+
+		if b_word[d0 + 1 : d1].strip(b"0123456789"):
 			# if has at least one non-digit char
 			# log.debug(f"stripDollarIndexes({b_word}):\nnon-digit between $$")
 			b_word_main += b_word[i:d1]
 			i = d1
 			continue
+
+		# Examples:
+		# make do$4$/make /do
+		# potere$1$<BR><BR>
+		# See also <a href='file://ITAL-ENG POTERE 1249-1250.pdf'>notes...</A>
+		# volere$1$<BR><BR>
+		# See also <a href='file://ITAL-ENG VOLERE 1469-1470.pdf'>notes...</A>
+		# Ihre$1$Ihres
 		if d1 + 1 < len(b_word) and b_word[d1 + 1] != 0x20:
-			"""
-			Examples:
-		make do$4$/make /do
-		potere$1$<BR><BR>
-		See also <a href='file://ITAL-ENG POTERE 1249-1250.pdf'>notes...</A>
-		volere$1$<BR><BR>
-		See also <a href='file://ITAL-ENG VOLERE 1469-1470.pdf'>notes...</A>
-		Ihre$1$Ihres
-			"""
 			log.debug(
 				f"stripDollarIndexes({b_word!r}):\n"
-				f"second $ is followed by non-space",
+				"second $ is followed by non-space",
 			)
-			pass
 		b_word_main += b_word[i:d0]
 		i = d1 + 1
 		strip_count += 1

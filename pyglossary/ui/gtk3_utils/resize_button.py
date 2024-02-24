@@ -1,7 +1,5 @@
-
-import typing
-
 # -*- coding: utf-8 -*-
+# mypy: ignore-errors
 #
 # Copyright © 2016-2017 Saeed Rasooli <saeed.gnu@gmail.com> (ilius)
 #
@@ -17,21 +15,25 @@ import typing
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
+
+
 from . import gdk, gtk
 from .utils import imageFromFile
 
+__all__ = ["ResizeButton"]
+
 
 class ResizeButton(gtk.EventBox):
-	def __init__(self: "typing.Self", win, edge=gdk.WindowEdge.SOUTH_EAST) -> None:
+	def __init__(self, win, edge=gdk.WindowEdge.SOUTH_EAST) -> None:
 		gtk.EventBox.__init__(self)
 		self.win = win
 		self.edge = edge
 		###
-		self.image = imageFromFile('resize.png')
+		self.image = imageFromFile("resize.png")
 		self.add(self.image)
-		self.connect('button-press-event', self.buttonPress)
+		self.connect("button-press-event", self.buttonPress)
 
-	def buttonPress(self: "typing.Self", obj, gevent):
+	def buttonPress(self, _obj, gevent):
 		self.win.begin_resize_drag(
 			self.edge,
 			gevent.button,

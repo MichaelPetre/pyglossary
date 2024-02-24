@@ -14,12 +14,12 @@
 # GNU General Public License for more details.
 
 from dataclasses import dataclass
-from typing import Dict
+
+__all__ = ["AppleDictProperties", "from_metadata"]
 
 
 @dataclass
 class AppleDictProperties:
-
 	# in plist file: "IDXDictionaryVersion"
 	# values := (1 | 2 | 3)
 	format_version: int
@@ -40,16 +40,17 @@ class AppleDictProperties:
 	key_text_fixed_fields: list[str]
 
 	# in plist file: "IDXIndexDataFields" / "IDXVariableDataFields"
-	# Example: ["DCSKeyword", "DCSHeadword", "DCSEntryTitle", "DCSAnchor", "DCSYomiWord"]
+	# Example: ["DCSKeyword", "DCSHeadword", "DCSEntryTitle",
+	# "DCSAnchor", "DCSYomiWord"]
 	key_text_variable_fields: list[str]
 
 	# DCSDictionaryCSS, generally "DefaultStyle.css"
 	css_name: "str | None"
 
 
-def from_metadata(metadata: Dict) -> AppleDictProperties:
+def from_metadata(metadata: dict) -> AppleDictProperties:
 	format_version: int = metadata.get("IDXDictionaryVersion", -1)
-	dictionaryIndexes: "list[dict] | None" = metadata.get('IDXDictionaryIndexes')
+	dictionaryIndexes: "list[dict] | None" = metadata.get("IDXDictionaryIndexes")
 	if dictionaryIndexes:
 		key_text_metadata = dictionaryIndexes[0]
 		body_metadata = dictionaryIndexes[2]
@@ -57,30 +58,29 @@ def from_metadata(metadata: Dict) -> AppleDictProperties:
 		key_text_metadata = {}
 		body_metadata = {}
 
-	key_text_data_fields = key_text_metadata.get('IDXIndexDataFields', {})
+	key_text_data_fields = key_text_metadata.get("IDXIndexDataFields", {})
 	key_text_variable_fields = [
-		field_data['IDXDataFieldName']
-		for field_data in key_text_data_fields.get('IDXVariableDataFields', [])
+		field_data["IDXDataFieldName"]
+		for field_data in key_text_data_fields.get("IDXVariableDataFields", [])
 	]
-	key_text_fixed_field = []
-	if "IDXFixedDataFields" in key_text_data_fields:
-		for fixed_field in key_text_data_fields["IDXFixedDataFields"]:
-			key_text_fixed_field.append(fixed_field['IDXDataFieldName'])
+	key_text_fixed_field = [
+		fixed_field["IDXDataFieldName"]
+		for fixed_field in key_text_data_fields.get("IDXFixedDataFields", [])
+	]
 
 	external_data_fields = key_text_data_fields.get("IDXExternalDataFields")
-	if 'HeapDataCompressionType' in body_metadata:
-		body_compression_type = body_metadata['HeapDataCompressionType']
-	else:
-		body_compression_type = 0
+	body_compression_type = body_metadata.get("HeapDataCompressionType", 0)
 	body_has_sections = (
-		body_compression_type == 2 and
-		external_data_fields[0].get("IDXDataSize") == 8
+		body_compression_type == 2 and external_data_fields[0].get("IDXDataSize") == 8
 	)
 
-	if 'TrieAuxiliaryDataOptions' in key_text_metadata and 'HeapDataCompressionType' in \
-			key_text_metadata['TrieAuxiliaryDataOptions']:
-		key_text_compression_type = \
-			key_text_metadata['TrieAuxiliaryDataOptions']['HeapDataCompressionType']
+	if (
+		"TrieAuxiliaryDataOptions" in key_text_metadata
+		and "HeapDataCompressionType" in key_text_metadata["TrieAuxiliaryDataOptions"]
+	):
+		key_text_compression_type = key_text_metadata["TrieAuxiliaryDataOptions"][
+			"HeapDataCompressionType"
+		]
 	else:
 		key_text_compression_type = 0
 
